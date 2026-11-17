@@ -1,0 +1,141 @@
+name: 发布 TClock
+
+# 触发方式：
+#   1) 推送形如 v1.2 的标签 → 自动构建 DMG 并创建 GitHub Release
+#   2) 在 Actions 页面手动运行 → 用工程里的 MARKETING_VERSION 作为版本号
+# 标签必须与 TClock.xcodeproj 的 MARKETING_VERSION 一致，避免发版版本号漂移。
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      prerelease:
+        description: '标记为预发布版本'
+        type: boolean
+        default: false
+      dry_run:
+        description: '只构建 DMG，不创建 Release（产物上传为 workflow artifact）'
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+concurrency:
+  group: tclock-release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    name: 构建 DMG 并发布 Release
+    runs-on: macos-latest
+    timeout-minutes: 40
+
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: 选择 Xcode
+        run: |
+          XCODE=$(ls -d /Applications/Xcode_*.app 2>/dev/null | sort | tail -1 || true)
+          if [ -n "$XCODE" ]; then
+            sudo xcode-select -s "$XCODE/Contents/Developer"
+          fi
+          xcodebuild -version
+          swift --version
+
+      - name: 解析版本号
+        id: meta
+        shell: bash
+        run: |
+          set -euo pipefail
+          PBX=TClock.xcodeproj/project.pbxproj
+          PROJECT_VERSION=$(sed -n 's/^[[:space:]]*MARKETING_VERSION = \(.*\);/\1/p' "$PBX" | head -1)
+          BUILD_VERSION=$(sed -n 's/^[[:space:]]*CURRENT_PROJECT_VERSION = \(.*\);/\1/p' "$PBX" | head -1)
+          if [ -z "$PROJECT_VERSION" ]; then
+            echo "::error::无法从 $PBX 读取 MARKETING_VERSION"
+            exit 1
+          fi
+
+          if [ "${GITHUB_REF_TYPE}" = "tag" ]; then
+            TAG="${GITHUB_REF_NAME}"
+            TAG_VERSION="${TAG#v}"
+            if [ "$TAG_VERSION" != "$PROJECT_VERSION" ]; then
+              echo "::error::标签 ${TAG}（版本 ${TAG_VERSION}）与工程 MARKETING_VERSION=${PROJECT_VERSION} 不一致，请先同步版本再打标签"
+              exit 1
+            fi
+          else
+            TAG="v${PROJECT_VERSION}"
+          fi
+
+          echo "version=$PROJECT_VERSION" >> "$GITHUB_OUTPUT"
+          echo "build=$BUILD_VERSION" >> "$GITHUB_OUTPUT"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "TClock $PROJECT_VERSION (build $BUILD_VERSION) → $TAG"
+
+      - name: 构建并校验 DMG
+        id: build
+        shell: bash
+        run: |
+          set -euo pipefail
+          chmod +x scripts/build-dmg.sh
+          scripts/build-dmg.sh "$RUNNER_TEMP/tclock-dist"
+        env:
+          TCLOCK_VERSION: ${{ steps.meta.outputs.version }}
+          TCLOCK_DERIVED_DATA: ${{ runner.temp }}/tclock-build
+
+      - name: 上传构建产物（dry run）
+        if: ${{ inputs.dry_run }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: TClock-${{ steps.meta.outputs.version }}-dmg
+          path: |
+            ${{ runner.temp }}/tclock-dist/*.dmg
+            ${{ runner.temp }}/tclock-dist/SHA256SUMS.txt
+          if-no-files-found: error
+
+      - name: 创建 / 更新 GitHub Release
+        if: ${{ !inputs.dry_run }}
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ steps.meta.outputs.tag }}
+          VERSION: ${{ steps.meta.outputs.version }}
+          BUILD_NUMBER: ${{ steps.meta.outputs.build }}
+          DIST: ${{ runner.temp }}/tclock-dist
+          # boolean input 直接注入 env 时渲染存在歧义，显式规范化为字符串 true/false。
+          PRERELEASE: ${{ inputs.prerelease && 'true' || 'false' }}
+          DMG: ${{ steps.build.outputs.dmg }}
+          SHA256: ${{ steps.build.outputs.sha256 }}
+        run: |
+          set -euo pipefail
+          cd "$GITHUB_WORKSPACE"
+
+          # gh 在标签不存在时会基于当前提交自动创建该标签。
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "Release $TAG 已存在，覆盖上传产物"
+            gh release upload "$TAG" "$DIST"/*.dmg "$DIST/SHA256SUMS.txt" --clobber
+          else
+            ARGS=(--title "TClock $VERSION" --generate-notes)
+            # 只有明确的 true/True/TRUE/1 才标预发布；默认或其他值一律正式版。
+            case "${PRERELEASE}" in
+              true|True|TRUE|1) ARGS+=(--prerelease) ;;
+            esac
+            gh release create "$TAG" "$DIST"/*.dmg "$DIST/SHA256SUMS.txt" "${ARGS[@]}"
+          fi
+
+          {
+            echo "### TClock ${VERSION}（build ${BUILD_NUMBER}）"
+            echo ""
+            echo "| 项目 | 值 |"
+            echo "| --- | --- |"
+            echo "| 标签 | \`$TAG\` |"
+            echo "| DMG | \`$DMG\` |"
+            echo "| SHA-256 | \`$SHA256\` |"
+            echo ""
+            echo "应用内「检查更新…」会通过 \`/releases\` API 读取本 Release 的 .dmg 资源。"
+          } >> "$GITHUB_STEP_SUMMARY"

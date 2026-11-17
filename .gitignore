@@ -1,0 +1,12 @@
+.DS_Store
+**/.DS_store
+dist
+.build
+*.dmg
+# Xcode
+*.xcuserstate
+*.xcodeproj/xcuserdata/
+*.xcworkspace/xcuserdata/
+#
+.workbuddy-ai
+.workbuddy
