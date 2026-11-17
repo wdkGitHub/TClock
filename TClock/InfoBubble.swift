@@ -1,16 +1,14 @@
 import AppKit
 import Foundation
-import IOKit.ps
 import SwiftUI
 
 // MARK: - 信息模型
 
-/// 时钟气泡里展示的信息：公历日期 + 星期、农历、电量。
+/// 时钟气泡里展示的信息：公历日期 + 星期、农历。
 /// 农历只在中文环境展示，非中文环境下 `lunarText` 为 nil。
 struct ClockInfo {
     var dateText: String
     var lunarText: String?
-    var batteryText: String?
 }
 
 @MainActor
@@ -33,8 +31,7 @@ enum ClockInfoProvider {
 
         return ClockInfo(
             dateText: dateText,
-            lunarText: lunar,
-            batteryText: batteryText()
+            lunarText: lunar
         )
     }
 
@@ -71,44 +68,6 @@ enum ClockInfoProvider {
         )
     }
 
-    // MARK: 电量
-
-    private static func batteryText() -> String? {
-        guard let snapshot = IOPSCopyPowerSourcesInfo()?.takeRetainedValue(),
-              let sources = IOPSCopyPowerSourcesList(snapshot)?.takeRetainedValue() as? [CFTypeRef]
-        else { return nil }
-
-        for source in sources {
-            guard let description = IOPSGetPowerSourceDescription(snapshot, source)?
-                .takeUnretainedValue() as? [String: Any] else { continue }
-
-            let current = description[kIOPSCurrentCapacityKey as String] as? Int ?? 0
-            let maximum = description[kIOPSMaxCapacityKey as String] as? Int ?? 100
-            let isCharging = description[kIOPSIsChargingKey as String] as? Bool ?? false
-            let state = description[kIOPSPowerSourceStateKey as String] as? String ?? ""
-
-            guard maximum > 0 else { continue }
-            let percentage = Int((Double(current) / Double(maximum) * 100).rounded())
-
-            let status: String
-            if isCharging {
-                status = NSLocalizedString("battery.charging", comment: "")
-            } else if state == (kIOPSACPowerValue as String) {
-                status = percentage >= 99
-                    ? NSLocalizedString("battery.full", comment: "")
-                    : NSLocalizedString("battery.plugged", comment: "")
-            } else {
-                status = NSLocalizedString("battery.onBattery", comment: "")
-            }
-
-            return String(
-                format: NSLocalizedString("battery.format", comment: ""),
-                percentage, status
-            )
-        }
-
-        return nil
-    }
 }
 
 // MARK: - 气泡形状
@@ -237,7 +196,8 @@ struct BubbleShape: Shape {
 /// 背景不用毛玻璃：带指针的路径在裁剪边界会出现一条深色接缝线，
 /// 纯色填充由 `BubbleShape` 一条连续路径一次成型最干净。
 /// 深浅模式只切换 token 里的动态色，不覆盖 `colorScheme`，也不重写组件规则。
-/// 无出现动画：瞬显，避免非激活面板上动画被节流导致的气泡闪烁。
+/// 弹出/收起的过渡动画在面板层（MainWindowManager）用 Core Animation 实现，
+/// SwiftUI 视图本身不做动画，避免非激活面板上 SwiftUI 动画被节流导致闪烁。
 struct InfoBubbleView: View {
     let info: ClockInfo
     var tailOnTop = false
@@ -270,26 +230,40 @@ struct InfoBubbleView: View {
     // MARK: 内容
 
     private var content: some View {
-        VStack(alignment: .leading, spacing: AppTheme.Space.xs) {
+        VStack(alignment: .leading, spacing: 0) {
+            // 主标题：日期与星期，稍大一档并加字距，建立视觉重心。
             Text(info.dateText)
-                .font(.system(size: AppTheme.Typography.bubbleLine, weight: AppTheme.Typography.medium))
+                .font(.system(size: AppTheme.Typography.bubbleTitle, weight: AppTheme.Typography.medium))
                 .foregroundStyle(AppTheme.Palette.bubbleTextPrimary)
+                .kerning(0.3)
 
-            if let lunar = info.lunarText {
-                Text(lunar)
-                    .font(.system(size: AppTheme.Typography.bubbleLine, weight: AppTheme.Typography.regular))
-                    .foregroundStyle(AppTheme.Palette.bubbleTextSecondary)
+            // 细分隔线拉开主次层次；没有农历时不显示。
+            if info.lunarText != nil {
+                Rectangle()
+                    .fill(AppTheme.Palette.bubbleTextSecondary.opacity(0.22))
+                    .frame(height: 0.5)
+                    .padding(.vertical, AppTheme.Space.sm)
             }
 
-            if let battery = info.batteryText {
-                Text(battery)
-                    .font(.system(size: AppTheme.Typography.bubbleLine, weight: AppTheme.Typography.regular))
-                    .foregroundStyle(AppTheme.Palette.bubbleTextSecondary)
+            if let lunar = info.lunarText {
+                detailLine(lunar)
             }
         }
         .monospacedDigit()
-        .lineLimit(1)
         .fixedSize()
+    }
+
+    /// 次级信息行：小圆点 + 文字，比主标题小一档、更柔和。
+    private func detailLine(_ text: String) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: AppTheme.Space.sm) {
+            Circle()
+                .fill(AppTheme.Palette.bubbleTextSecondary.opacity(0.55))
+                .frame(width: 3, height: 3)
+            Text(text)
+                .font(.system(size: AppTheme.Typography.bubbleDetail, weight: AppTheme.Typography.regular))
+                .foregroundStyle(AppTheme.Palette.bubbleTextSecondary)
+                .lineLimit(1)
+        }
     }
 
     // MARK: 背景

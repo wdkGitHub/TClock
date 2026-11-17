@@ -73,11 +73,12 @@ enum AppTheme {
         // MARK: 气泡（桌面浮层）
 
         /// 半透明纯色底：不用毛玻璃，避免带指针的路径在裁剪边界出现接缝。
+        /// alpha 调低以增强通透感，让壁纸透出更多；文字对比度由阴影与细描边兜底。
         static var bubbleFill: Color {
             Color(nsColor: dynamicNSColor(
                 "tclock.bubbleFill",
-                light: NSColor(calibratedWhite: 0.33, alpha: 0.82),
-                dark: NSColor(calibratedWhite: 0.20, alpha: 0.86)
+                light: NSColor(calibratedWhite: 0.33, alpha: 0.66),
+                dark: NSColor(calibratedWhite: 0.20, alpha: 0.70)
             ))
         }
 
@@ -160,7 +161,10 @@ enum AppTheme {
     // MARK: - 字号 / 字重（只用 400 / 500）
 
     enum Typography {
+        /// 气泡主标题（日期），比次级信息大一档，拉开层次。
+        static let bubbleTitle: CGFloat = 16
         static let bubbleLine: CGFloat = 14
+        static let bubbleDetail: CGFloat = 13
         static let body: CGFloat = 13
         static let caption: CGFloat = 12
 

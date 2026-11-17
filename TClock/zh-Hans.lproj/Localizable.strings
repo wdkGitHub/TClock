@@ -100,11 +100,6 @@
 "lunar.day.29" = "廿九";
 "lunar.day.30" = "三十";
 "lunar.leap" = "闰";
-"battery.charging" = "正在充电";
-"battery.full" = "已充满";
-"battery.plugged" = "已接电源";
-"battery.onBattery" = "使用电池";
-"battery.format" = "电量:%d%% %@";
 "window.settings.title" = "TClock 设置";
 "menu.settings" = "设置…";
 "menu.checkUpdate" = "检查更新…";

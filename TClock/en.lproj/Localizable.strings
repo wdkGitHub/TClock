@@ -56,11 +56,6 @@
 "corner.bottomRight.menu" = "Bottom Right Corner";
 "error.login.remove" = "Could not remove the login item: %@";
 "error.login.create" = "Could not create the login item: %@";
-"battery.charging" = "Charging";
-"battery.full" = "Fully Charged";
-"battery.plugged" = "Plugged In";
-"battery.onBattery" = "On Battery";
-"battery.format" = "Battery: %d%% %@";
 "window.settings.title" = "TClock Settings";
 "menu.settings" = "Settings…";
 "menu.checkUpdate" = "Check for Updates…";
