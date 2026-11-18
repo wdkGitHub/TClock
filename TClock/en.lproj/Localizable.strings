@@ -21,7 +21,7 @@
 "settings.appearance.theme.help" = "Defaults to the macOS system appearance. Set the clock text color separately below.";
 "settings.appearance.font" = "Font";
 "settings.appearance.font.system" = "System Font";
-"settings.appearance.size" = "Font Size";
+"settings.appearance.size" = "Display Size";
 "settings.appearance.weight" = "Font Weight";
 "settings.appearance.color" = "Text Color";
 "settings.appearance.shadow" = "Text Shadow";

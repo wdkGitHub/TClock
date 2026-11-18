@@ -120,8 +120,9 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         window.isReleasedWhenClosed = false
         window.center()
 
-        // 默认展示全部设置项：按 SwiftUI 表单的 fittingSize 定窗口高度，
-        // 再夹到屏幕可见范围内。用户仍可手动缩小（缩小后表单内部滚动）。
+        // 默认展示全部设置项：按 SwiftUI 表单全部内容的 fittingSize 定窗口高度，
+        // 再夹到屏幕可见范围内，打开即见所有设置，无需为侧栏预留固定尺寸。
+        // 用户仍可手动缩小（缩小后表单内部滚动）。
         hosting.view.layoutSubtreeIfNeeded()
         let fitting = hosting.view.fittingSize
         let screenHeight = (NSScreen.main ?? NSScreen.screens.first)?.visibleFrame.height ?? 1000

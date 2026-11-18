@@ -1,8 +1,15 @@
 import SwiftUI
 
-/// 设置面板：单页扁平表单，不分类、不加分组标题。
+/// 设置面板：全部平铺 + 常驻预览，打开即见所有设置。
 ///
-/// - 去掉 `TabView` 与 `Section` 标题，所有可选项一屏纵向排布，减少跳转；
+/// - 单层 `Form(.grouped)`：所有设置项按「常用区 → 预览 → 高级区」依次平铺，
+///   不加 section header，打开窗口即可看到并调整全部设置；
+/// - 位置相关三项（预设位置 / 当前位置 / 重置）归入常用区，紧跟在「总在最前」之后，
+///   与锁定、置顶等高频行为项放在一起；
+/// - 预览卡片夹在常用区与高级区之间：调整时间、字体、颜色等任何参数都要即时看到效果，
+///   这是本项目“所见即所得”的核心设计意图；
+/// - 表单全部内容的 `fittingSize` 由 `MainWindowManager` 用于自适应定尺，
+///   因此打开即见所有设置；
 /// - 字号用语义字号，卡片描边 / 圆角 / 阴影 / 间距走 `AppTheme` token；
 /// - 说明文字压缩到必要的三行，其余靠 `.help` 悬浮提示；
 /// - 所有改动依旧即时生效并持久化（由 `AppSettings` 负责）。
@@ -14,13 +21,15 @@ struct SettingsView: View {
 
     var body: some View {
         Form {
-            Section {
-                formatRows
-                preview
-                    .frame(maxWidth: .infinity)
-                appearanceRows
-                behaviorRows
-            }
+            // 常用区：打开即见的高频项（含位置设置），不加 section header。
+            commonRows
+
+            // 预览紧跟常用区，任何参数调整都能即时看到效果。
+            preview
+                .frame(maxWidth: .infinity)
+
+            // 高级区：其余设置项同样平铺，打开即见。
+            advancedRows
         }
         .formStyle(.grouped)
         .frame(
@@ -29,9 +38,9 @@ struct SettingsView: View {
         )
     }
 
-    // MARK: - 日期 / 时间格式
+    // MARK: - 常用区（无 section header，含位置设置）
 
-    private var formatRows: some View {
+    private var commonRows: some View {
         Group {
             // 显示模式：数字 / 指针。表盘的日期与星期固定显示，不走下面两个开关。
             LabeledContent("settings.displayMode.label") {
@@ -46,6 +55,84 @@ struct SettingsView: View {
             }
             .help("settings.displayMode.help")
 
+            // 时间只有 24 / 12 小时制两种，不再允许自由输入格式串。
+            LabeledContent("settings.time.hourCycle") {
+                Picker("settings.time.hourCycle", selection: $settings.hourCycle) {
+                    ForEach(HourCycle.allCases) { cycle in
+                        Text(cycle.display).tag(cycle)
+                    }
+                }
+                .labelsHidden()
+                .pickerStyle(.segmented)
+                .frame(width: controlWidth)
+            }
+            .disabled(settings.displayMode == .analog)
+
+            LabeledContent("settings.appearance.theme") {
+                Picker("settings.appearance.theme", selection: $settings.appearanceMode) {
+                    ForEach(AppearanceMode.allCases) { mode in
+                        Text(mode.display).tag(mode)
+                    }
+                }
+                .labelsHidden()
+                .pickerStyle(.segmented)
+                .frame(width: controlWidth)
+            }
+
+            Text("settings.appearance.theme.help")
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+
+            LabeledContent("settings.appearance.size") {
+                HStack(spacing: AppTheme.Space.sm) {
+                    Slider(value: $settings.fontSize, in: 20...320)
+
+                    Text("\(Int(settings.fontSize))")
+                        .font(.body.monospacedDigit())
+                        .foregroundStyle(.secondary)
+                        .frame(width: 40, alignment: .trailing)
+                }
+                .frame(width: controlWidth + 40)
+            }
+
+            Toggle(isOn: $settings.isLocked) {
+                Text("settings.behavior.lock")
+            }
+            .toggleStyle(.switch)
+            .help("settings.behavior.lock.help")
+
+            Toggle("settings.behavior.alwaysOnTop", isOn: $settings.alwaysOnTop)
+                .toggleStyle(.switch)
+                .help("settings.behavior.alwaysOnTop.help")
+
+            LabeledContent("common.presetPosition") {
+                HStack(spacing: AppTheme.Space.sm) {
+                    ForEach(ClockCorner.allCases) { corner in
+                        Button(corner.display) { applyCorner(corner) }
+                            .buttonStyle(.bordered)
+                    }
+                }
+            }
+            .help("settings.behavior.corner.help")
+
+            LabeledContent("settings.behavior.currentPosition") {
+                Text(positionText)
+                    .font(.callout.monospacedDigit())
+                    .foregroundStyle(.secondary)
+            }
+
+            Button("settings.behavior.reset") {
+                NotificationCenter.default.post(name: .tclockResetPosition, object: nil)
+            }
+            .help("settings.behavior.reset.help")
+        }
+    }
+
+    // MARK: - 高级区（平铺在预览下方）
+
+    private var advancedRows: some View {
+        Group {
             // 日期：显隐与格式是两个独立控件；隐藏时格式输入置灰。
             LabeledContent("settings.date.label") {
                 HStack(spacing: AppTheme.Space.sm) {
@@ -61,19 +148,6 @@ struct SettingsView: View {
                 }
             }
             .disabled(!settings.showDate || settings.displayMode == .analog)
-
-            // 时间只有 24 / 12 小时制两种，不再允许自由输入格式串。
-            LabeledContent("settings.time.hourCycle") {
-                Picker("settings.time.hourCycle", selection: $settings.hourCycle) {
-                    ForEach(HourCycle.allCases) { cycle in
-                        Text(cycle.display).tag(cycle)
-                    }
-                }
-                .labelsHidden()
-                .pickerStyle(.segmented)
-                .frame(width: controlWidth)
-            }
-            .disabled(settings.displayMode == .analog)
 
             HStack(spacing: AppTheme.Space.xl) {
                 Toggle("settings.date.show", isOn: $settings.showDate)
@@ -104,33 +178,7 @@ struct SettingsView: View {
                 Spacer(minLength: 0)
             }
             .disabled(settings.displayMode == .analog)
-        }
-    }
 
-    /// 日期格式预设：右侧图标按钮，菜单里是只含年月日的常用格式。
-    private var dateMenu: some View {
-        Menu {
-            ForEach(DateFormatPreset.all) { preset in
-                Button {
-                    settings.datePattern = preset.pattern
-                } label: {
-                    Text("\(preset.title)　\(preset.pattern)")
-                }
-            }
-        } label: {
-            Image(systemName: "calendar")
-        }
-        .menuStyle(.borderlessButton)
-        .menuIndicator(.hidden)
-        .fixedSize()
-        .help("settings.date.menu.help")
-        .accessibilityLabel("settings.date.menu.label")
-    }
-
-    // MARK: - 外观
-
-    private var appearanceRows: some View {
-        Group {
             LabeledContent("settings.language.label") {
                 Picker("settings.language.label", selection: $settings.language) {
                     ForEach(AppLanguage.allCases) { language in
@@ -146,22 +194,6 @@ struct SettingsView: View {
             }
             .help("settings.language.help")
 
-            LabeledContent("settings.appearance.theme") {
-                Picker("settings.appearance.theme", selection: $settings.appearanceMode) {
-                    ForEach(AppearanceMode.allCases) { mode in
-                        Text(mode.display).tag(mode)
-                    }
-                }
-                .labelsHidden()
-                .pickerStyle(.segmented)
-                .frame(width: controlWidth)
-            }
-
-            Text("settings.appearance.theme.help")
-                .font(.footnote)
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
-
             LabeledContent("settings.appearance.font") {
                 Picker("settings.appearance.font", selection: $settings.fontFamily) {
                     Text("settings.appearance.font.system").tag(FontCatalog.systemFamily)
@@ -172,18 +204,6 @@ struct SettingsView: View {
                 .labelsHidden()
                 .pickerStyle(.menu)
                 .frame(width: controlWidth)
-            }
-
-            LabeledContent("settings.appearance.size") {
-                HStack(spacing: AppTheme.Space.sm) {
-                    Slider(value: $settings.fontSize, in: 20...320)
-
-                    Text("\(Int(settings.fontSize))")
-                        .font(.body.monospacedDigit())
-                        .foregroundStyle(.secondary)
-                        .frame(width: 40, alignment: .trailing)
-                }
-                .frame(width: controlWidth + 40)
             }
 
             LabeledContent("settings.appearance.weight") {
@@ -218,6 +238,26 @@ struct SettingsView: View {
             }
             .help("settings.appearance.opacity.help")
         }
+    }
+
+    /// 日期格式预设：右侧图标按钮，菜单里是只含年月日的常用格式。
+    private var dateMenu: some View {
+        Menu {
+            ForEach(DateFormatPreset.all) { preset in
+                Button {
+                    settings.datePattern = preset.pattern
+                } label: {
+                    Text("\(preset.title)　\(preset.pattern)")
+                }
+            }
+        } label: {
+            Image(systemName: "calendar")
+        }
+        .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
+        .fixedSize()
+        .help("settings.date.menu.help")
+        .accessibilityLabel("settings.date.menu.label")
     }
 
     /// 预览卡形状：圆角只定义一次，填充 / 裁剪 / 描边共用。
@@ -260,43 +300,6 @@ struct SettingsView: View {
             get: { Color(nsColor: settings.textColor) },
             set: { settings.textColor = NSColor($0) }
         )
-    }
-
-    // MARK: - 窗口与位置
-
-    private var behaviorRows: some View {
-        Group {
-            Toggle(isOn: $settings.isLocked) {
-                Text("settings.behavior.lock")
-            }
-            .toggleStyle(.switch)
-            .help("settings.behavior.lock.help")
-
-            Toggle("settings.behavior.alwaysOnTop", isOn: $settings.alwaysOnTop)
-                .toggleStyle(.switch)
-                .help("settings.behavior.alwaysOnTop.help")
-
-            LabeledContent("common.presetPosition") {
-                HStack(spacing: AppTheme.Space.sm) {
-                    ForEach(ClockCorner.allCases) { corner in
-                        Button(corner.display) { applyCorner(corner) }
-                            .buttonStyle(.bordered)
-                    }
-                }
-            }
-            .help("settings.behavior.corner.help")
-
-            LabeledContent("settings.behavior.currentPosition") {
-                Text(positionText)
-                    .font(.callout.monospacedDigit())
-                    .foregroundStyle(.secondary)
-            }
-
-            Button("settings.behavior.reset") {
-                NotificationCenter.default.post(name: .tclockResetPosition, object: nil)
-            }
-            .help("settings.behavior.reset.help")
-        }
     }
 
     /// 预设角落通过通知交给 `MainWindowManager`，SwiftUI 不直接持有窗口对象。

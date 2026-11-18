@@ -21,7 +21,7 @@
 "settings.appearance.theme.help" = "默认跟随 macOS 系统外观；时钟文字颜色在下方单独设置。";
 "settings.appearance.font" = "字体";
 "settings.appearance.font.system" = "系统字体";
-"settings.appearance.size" = "字号";
+"settings.appearance.size" = "显示大小";
 "settings.appearance.weight" = "字重";
 "settings.appearance.color" = "文字颜色";
 "settings.appearance.shadow" = "文字阴影";
