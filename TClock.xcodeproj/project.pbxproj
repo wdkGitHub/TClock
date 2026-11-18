@@ -16,6 +16,7 @@
 		1A2000000000000000000007 /* DesignTokens.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A100000000000000000000A /* DesignTokens.swift */; };
 		1A2000000000000000000008 /* Updater.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A100000000000000000000B /* Updater.swift */; };
 		1A2000000000000000000009 /* LanguageManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A100000000000000000000C /* LanguageManager.swift */; };
+		1A200000000000000000000A /* AboutView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A100000000000000000000D /* AboutView.swift */; };
 		1A5000000000000000000001 /* Localizable.strings in Resources */ = {isa = PBXBuildFile; fileRef = 1A5000000000000000000002 /* Localizable.strings */; };
 		1A6000000000000000000001 /* AppIcon.icns in Resources */ = {isa = PBXBuildFile; fileRef = 1A6000000000000000000002 /* AppIcon.icns */; };
 /* End PBXBuildFile section */
@@ -33,6 +34,7 @@
 		1A100000000000000000000A /* DesignTokens.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DesignTokens.swift; sourceTree = "<group>"; };
 		1A100000000000000000000B /* Updater.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Updater.swift; sourceTree = "<group>"; };
 		1A100000000000000000000C /* LanguageManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LanguageManager.swift; sourceTree = "<group>"; };
+		1A100000000000000000000D /* AboutView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AboutView.swift; sourceTree = "<group>"; };
 		1A5000000000000000000003 /* en */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = en; path = en.lproj/Localizable.strings; sourceTree = "<group>"; };
 		1A5000000000000000000004 /* zh-Hans */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = "zh-Hans"; path = "zh-Hans.lproj/Localizable.strings"; sourceTree = "<group>"; };
 		1A6000000000000000000002 /* AppIcon.icns */ = {isa = PBXFileReference; lastKnownFileType = image.icns; path = AppIcon.icns; sourceTree = "<group>"; };
@@ -77,6 +79,7 @@
 				1A100000000000000000000A /* DesignTokens.swift */,
 				1A100000000000000000000B /* Updater.swift */,
 				1A100000000000000000000C /* LanguageManager.swift */,
+				1A100000000000000000000D /* AboutView.swift */,
 				1A6000000000000000000002 /* AppIcon.icns */,
 				1A1000000000000000000006 /* Info.plist */,
 				1A1000000000000000000007 /* TClock.entitlements */,
@@ -165,6 +168,7 @@
 				1A2000000000000000000007 /* DesignTokens.swift in Sources */,
 				1A2000000000000000000008 /* Updater.swift in Sources */,
 				1A2000000000000000000009 /* LanguageManager.swift in Sources */,
+				1A200000000000000000000A /* AboutView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

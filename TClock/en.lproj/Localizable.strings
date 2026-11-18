@@ -62,8 +62,8 @@
 "error.login.remove" = "Could not remove the login item: %@";
 "error.login.create" = "Could not create the login item: %@";
 "window.settings.title" = "TClock Settings";
-"menu.settings" = "Settings…";
-"menu.checkUpdate" = "Check for Updates…";
+"menu.settings" = "Settings";
+"menu.checkUpdate" = "Check for Updates";
 "menu.hideClock" = "Hide Clock";
 "menu.showClock" = "Show Clock";
 "menu.lockPosition" = "Lock Position (Not Selectable)";
@@ -97,11 +97,11 @@
 "update.check.failed" = "Update Check Failed";
 "update.progress.checking" = "Checking GitHub for a newer version…";
 "update.upToDate.title" = "You're Up to Date";
-"update.upToDate.message" = "TClock %@ (build %ld) is the latest version. No updates found.";
+"update.upToDate.message" = "TClock %@ is up to date. No updates found.";
 "update.local.package" = "Local Installer";
 "update.local.notes" = "Local DMG debug (TCLOCK_UPDATE_DMG_URL)";
 "update.available.title" = "New TClock Version %@ Available";
-"update.available.message" = "Current version %1$@ (build %2$ld)\nInstaller %3$@%4$@\n\n%5$@";
+"update.available.message" = "Current version %1$@\nInstaller %2$@%3$@\n\n%4$@";
 "update.available.size" = " · %.1f MB";
 "update.button.install" = "Update Now";
 "update.button.releasePage" = "View Release Page";
@@ -123,3 +123,8 @@
 "language.system" = "Follow System";
 "language.zhHans" = "Chinese (Simplified)";
 "language.english" = "English";
+
+/* About window */
+"window.about.title" = "About TClock";
+"about.version" = "Version %@";
+"about.repository.open" = "Open the GitHub repository in your browser";

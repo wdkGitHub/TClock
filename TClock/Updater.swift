@@ -436,7 +436,9 @@ final class AppUpdater: NSObject {
 
     private var localBuild: Int {
         guard let raw = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String else { return 0 }
-        return Int(raw) ?? 0
+        if let direct = Int(raw) { return direct }
+        // 打包后 CFBundleVersion 与版本串一致（如 1.0.3），取最后一段作为 build 展示。
+        return raw.split(separator: ".").last.flatMap { Int($0) } ?? 0
     }
 
     // MARK: 入口
@@ -492,7 +494,7 @@ final class AppUpdater: NSObject {
                         NSLocalizedString("update.upToDate.title", comment: ""),
                         String(
                             format: NSLocalizedString("update.upToDate.message", comment: ""),
-                            localVersionText, localBuild
+                            localVersionText
                         )
                     )
                 }
@@ -569,7 +571,7 @@ final class AppUpdater: NSObject {
         )
         alert.informativeText = String(
             format: NSLocalizedString("update.available.message", comment: ""),
-            localVersionText, localBuild, candidate.assetName, size, briefNotes(candidate.notes)
+            localVersionText, candidate.assetName, size, briefNotes(candidate.notes)
         )
         alert.alertStyle = .informational
         alert.addButton(withTitle: NSLocalizedString("update.button.install", comment: ""))
@@ -651,7 +653,7 @@ final class AppUpdater: NSObject {
             return
         } catch {
             hideProgress()
-            showError("update.failed.title", error)
+            showError(NSLocalizedString("update.failed.title", comment: ""), error)
         }
     }
 
@@ -671,7 +673,7 @@ final class AppUpdater: NSObject {
             backing: .buffered,
             defer: false
         )
-        window.title = "update.window.title"
+        window.title = NSLocalizedString("update.window.title", comment: "")
         window.isReleasedWhenClosed = false
 
         let content = NSView(frame: frame)
@@ -685,7 +687,7 @@ final class AppUpdater: NSObject {
         bar.isIndeterminate = true
         bar.startAnimation(nil)
 
-        let cancel = NSButton(title: "common.cancel", target: self, action: #selector(cancelUpdate))
+        let cancel = NSButton(title: NSLocalizedString("common.cancel", comment: ""), target: self, action: #selector(cancelUpdate))
         cancel.frame = NSRect(x: 280, y: 16, width: 80, height: 28)
         cancel.bezelStyle = .rounded
 
@@ -719,7 +721,7 @@ final class AppUpdater: NSObject {
         alert.messageText = title
         alert.informativeText = message
         alert.alertStyle = .informational
-        alert.addButton(withTitle: "common.ok")
+        alert.addButton(withTitle: NSLocalizedString("common.ok", comment: ""))
         NSApp.activate(ignoringOtherApps: true)
         alert.runModal()
     }
@@ -729,7 +731,7 @@ final class AppUpdater: NSObject {
         alert.messageText = title
         alert.informativeText = error.localizedDescription
         alert.alertStyle = .warning
-        alert.addButton(withTitle: "common.ok")
+        alert.addButton(withTitle: NSLocalizedString("common.ok", comment: ""))
         NSApp.activate(ignoringOtherApps: true)
         alert.runModal()
     }

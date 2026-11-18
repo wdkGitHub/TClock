@@ -167,6 +167,7 @@ final class MainWindowManager: NSObject, NSMenuDelegate {
     private var dragHandle: DragHandleView?
     private var statusItem: NSStatusItem?
     private var settingsController: SettingsWindowController?
+    private var aboutController: AboutWindowController?
 
     private var visibleItem: NSMenuItem?
     private var lockItem: NSMenuItem?
@@ -453,6 +454,7 @@ final class MainWindowManager: NSObject, NSMenuDelegate {
         panel?.appearance = appearance
         bubblePanel?.appearance = appearance
         settingsController?.window?.appearance = appearance
+        aboutController?.window?.appearance = appearance
     }
 
     // MARK: - 设置联动
@@ -872,6 +874,11 @@ final class MainWindowManager: NSObject, NSMenuDelegate {
 
         menu.addItem(.separator())
 
+        // 关于紧邻「退出」上方。
+        let aboutItem = NSMenuItem(title: NSLocalizedString("menu.about", comment: ""), action: #selector(showAbout), keyEquivalent: "")
+        aboutItem.target = self
+        menu.addItem(aboutItem)
+
         let quitItem = NSMenuItem(title: NSLocalizedString("menu.quit", comment: ""), action: #selector(quit), keyEquivalent: "q")
         quitItem.target = self
         menu.addItem(quitItem)
@@ -886,13 +893,13 @@ final class MainWindowManager: NSObject, NSMenuDelegate {
 
         let appItem = NSMenuItem()
         let appMenu = NSMenu(title: "TClock")
-        appMenu.addItem(
-            NSMenuItem(
-                title: "menu.about",
-                action: #selector(NSApplication.orderFrontStandardAboutPanel(_:)),
-                keyEquivalent: ""
-            )
+        let aboutItem = NSMenuItem(
+            title: NSLocalizedString("menu.about", comment: ""),
+            action: #selector(showAbout),
+            keyEquivalent: ""
         )
+        aboutItem.target = self
+        appMenu.addItem(aboutItem)
         appMenu.addItem(.separator())
 
         let settingsItem = NSMenuItem(title: NSLocalizedString("menu.settings", comment: ""), action: #selector(openSettings), keyEquivalent: ",")
@@ -1005,6 +1012,10 @@ final class MainWindowManager: NSObject, NSMenuDelegate {
 
         menu.addItem(.separator())
 
+        let aboutItem = NSMenuItem(title: NSLocalizedString("menu.about", comment: ""), action: #selector(showAbout), keyEquivalent: "")
+        aboutItem.target = self
+        menu.addItem(aboutItem)
+
         let quitItem = NSMenuItem(title: NSLocalizedString("menu.quit", comment: ""), action: #selector(quit), keyEquivalent: "")
         quitItem.target = self
         menu.addItem(quitItem)
@@ -1050,6 +1061,20 @@ final class MainWindowManager: NSObject, NSMenuDelegate {
 
     @objc private func openSettings() {
         presentSettings()
+    }
+
+    /// 打开关于窗口（应用主菜单「关于 TClock」）。
+    @objc private func showAbout() {
+        presentAbout()
+    }
+
+    /// 供调试入口复用，避免另建一套窗口。
+    func presentAbout() {
+        if aboutController == nil {
+            aboutController = AboutWindowController()
+        }
+        aboutController?.window?.appearance = settings.appearanceMode.nsAppearance
+        aboutController?.present()
     }
 
     /// 菜单栏 / 右键菜单 / 应用菜单共用；手动检查忽略 24 小时节流。

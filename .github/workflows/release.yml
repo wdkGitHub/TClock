@@ -1,9 +1,16 @@
 name: 发布 TClock
 
 # 触发方式：
-#   1) 推送形如 v1.2 的标签 → 自动构建 DMG 并创建 GitHub Release
-#   2) 在 Actions 页面手动运行 → 用工程里的 MARKETING_VERSION 作为版本号
-# 标签必须与 TClock.xcodeproj 的 MARKETING_VERSION 一致，避免发版版本号漂移。
+#   1) 推送形如 v1.0 的标签 → 触发构建；标签里的版本可与工程版本不同，不同则以标签为准并警告
+#   2) 在 Actions 页面手动运行 → 用工程里的版本直接构建
+#
+# 版本规则：
+#   完整版本 = version + "." + CURRENT_PROJECT_VERSION（每次打包自动递增）
+#   例：version=1.0、CURRENT_PROJECT_VERSION=3 → 完整版本 1.0.3
+#   - version 默认取工程 MARKETING_VERSION（人工维护）；标签触发且标签版本不同时改用标签版本，并给出警告
+#   - build（CURRENT_PROJECT_VERSION）由本工作流在打包成功后 +1 并提交回仓库
+#   - Tag / DMG 文件名 / Release / App 内显示版本统一使用完整版本
+#   - 应用内「检查更新…」依赖 Release 的 tag 做版本比较，因此 Release tag 必须是完整版本。
 
 on:
   push:
@@ -16,15 +23,16 @@ on:
         type: boolean
         default: false
       dry_run:
-        description: '只构建 DMG，不创建 Release（产物上传为 workflow artifact）'
+        description: '只构建 DMG，不创建 Release（产物上传为 workflow artifact，且不递增 build）'
         type: boolean
         default: false
 
 permissions:
   contents: write
 
+# build 号写在仓库里并回写提交，必须串行，避免并发打包互相覆盖。
 concurrency:
-  group: tclock-release-${{ github.ref }}
+  group: tclock-release
   cancel-in-progress: false
 
 jobs:
@@ -55,27 +63,39 @@ jobs:
           set -euo pipefail
           PBX=TClock.xcodeproj/project.pbxproj
           PROJECT_VERSION=$(sed -n 's/^[[:space:]]*MARKETING_VERSION = \(.*\);/\1/p' "$PBX" | head -1)
-          BUILD_VERSION=$(sed -n 's/^[[:space:]]*CURRENT_PROJECT_VERSION = \(.*\);/\1/p' "$PBX" | head -1)
-          if [ -z "$PROJECT_VERSION" ]; then
-            echo "::error::无法从 $PBX 读取 MARKETING_VERSION"
+          BUILD_VERSION=$(sed -n 's/^[[:space:]]*CURRENT_PROJECT_VERSION = \([0-9][0-9]*\);/\1/p' "$PBX" | head -1)
+          if [ -z "$PROJECT_VERSION" ] || [ -z "$BUILD_VERSION" ]; then
+            echo "::error::无法从 $PBX 读取 MARKETING_VERSION / CURRENT_PROJECT_VERSION"
             exit 1
           fi
 
+          # 标签携带的版本优先：推 v1.0 时若与工程 MARKETING_VERSION 相同则直接用；
+          # 不同则以标签版本为准，并给出警告（方便只推标签就能发一个小版本）。
+          # 应用内更新器按 Release 的 tag 比较版本，所以 Release 始终用完整版本 tag。
+          VERSION_BASE="$PROJECT_VERSION"
           if [ "${GITHUB_REF_TYPE}" = "tag" ]; then
-            TAG="${GITHUB_REF_NAME}"
-            TAG_VERSION="${TAG#v}"
-            if [ "$TAG_VERSION" != "$PROJECT_VERSION" ]; then
-              echo "::error::标签 ${TAG}（版本 ${TAG_VERSION}）与工程 MARKETING_VERSION=${PROJECT_VERSION} 不一致，请先同步版本再打标签"
-              exit 1
+            PUSHED_TAG="${GITHUB_REF_NAME}"
+            PUSHED_VERSION="${PUSHED_TAG#v}"
+            # 工作流自己生成的发布 tag（如 v1.0.3）被 push --tags 带回时，去掉末尾的 build 段。
+            if [ "$PUSHED_VERSION" = "${PROJECT_VERSION}.${BUILD_VERSION}" ]; then
+              PUSHED_VERSION="$PROJECT_VERSION"
             fi
-          else
-            TAG="v${PROJECT_VERSION}"
+            if [ "$PUSHED_VERSION" != "$PROJECT_VERSION" ]; then
+              echo "::warning::推送标签版本 ${PUSHED_VERSION} 与工程 MARKETING_VERSION=${PROJECT_VERSION} 不一致，本次以标签版本 ${PUSHED_VERSION} 为准"
+              VERSION_BASE="$PUSHED_VERSION"
+            fi
           fi
 
-          echo "version=$PROJECT_VERSION" >> "$GITHUB_OUTPUT"
+          FULL_VERSION="${VERSION_BASE}.${BUILD_VERSION}"
+          NEXT_BUILD=$((BUILD_VERSION + 1))
+          TAG="v${FULL_VERSION}"
+
+          echo "version=$FULL_VERSION" >> "$GITHUB_OUTPUT"
+          echo "base_version=$VERSION_BASE" >> "$GITHUB_OUTPUT"
           echo "build=$BUILD_VERSION" >> "$GITHUB_OUTPUT"
+          echo "next_build=$NEXT_BUILD" >> "$GITHUB_OUTPUT"
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
-          echo "TClock $PROJECT_VERSION (build $BUILD_VERSION) → $TAG"
+          echo "TClock version ${PROJECT_VERSION} + build ${BUILD_VERSION} → ${FULL_VERSION} (${TAG})，下次 build 将为 ${NEXT_BUILD}"
 
       - name: 构建并校验 DMG
         id: build
@@ -85,6 +105,7 @@ jobs:
           chmod +x scripts/build-dmg.sh
           scripts/build-dmg.sh "$RUNNER_TEMP/tclock-dist"
         env:
+          # 完整版本（如 1.0.3）：build-dmg.sh 用它覆盖 Info.plist 的版本字段与 DMG 文件名。
           TCLOCK_VERSION: ${{ steps.meta.outputs.version }}
           TCLOCK_DERIVED_DATA: ${{ runner.temp }}/tclock-build
 
@@ -105,6 +126,7 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG: ${{ steps.meta.outputs.tag }}
           VERSION: ${{ steps.meta.outputs.version }}
+          BASE_VERSION: ${{ steps.meta.outputs.base_version }}
           BUILD_NUMBER: ${{ steps.meta.outputs.build }}
           DIST: ${{ runner.temp }}/tclock-dist
           # boolean input 直接注入 env 时渲染存在歧义，显式规范化为字符串 true/false。
@@ -129,13 +151,48 @@ jobs:
           fi
 
           {
-            echo "### TClock ${VERSION}（build ${BUILD_NUMBER}）"
+            echo "### TClock ${VERSION}"
             echo ""
             echo "| 项目 | 值 |"
             echo "| --- | --- |"
+            echo "| 完整版本 | ${VERSION}（version ${BASE_VERSION} · build ${BUILD_NUMBER}） |"
             echo "| 标签 | \`$TAG\` |"
             echo "| DMG | \`$DMG\` |"
             echo "| SHA-256 | \`$SHA256\` |"
             echo ""
             echo "应用内「检查更新…」会通过 \`/releases\` API 读取本 Release 的 .dmg 资源。"
           } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: 递增 build 并提交回仓库
+        if: ${{ !inputs.dry_run }}
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          cd "$GITHUB_WORKSPACE"
+          BRANCH="${{ github.event.repository.default_branch }}"
+          PBX=TClock.xcodeproj/project.pbxproj
+
+          # 标签触发时处于 detached HEAD：切到默认分支的最新提交再改，避免丢提交 / 相互覆盖。
+          git fetch origin "$BRANCH"
+          git checkout -B "$BRANCH" "origin/$BRANCH"
+
+          LATEST=$(sed -n 's/^[[:space:]]*CURRENT_PROJECT_VERSION = \([0-9][0-9]*\);/\1/p' "$PBX" | head -1)
+          if [ -z "$LATEST" ]; then
+            echo "::error::无法读取最新 CURRENT_PROJECT_VERSION"
+            exit 1
+          fi
+          NEXT=$((LATEST + 1))
+          NEXT_BUILD_NUMBER="$NEXT" perl -pi -e 's/(CURRENT_PROJECT_VERSION = )\d+;/${1}$ENV{NEXT_BUILD_NUMBER};/' "$PBX"
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add "$PBX"
+          if git diff --cached --quiet; then
+            echo "::notice::CURRENT_PROJECT_VERSION 已是 ${NEXT}，无需提交"
+          else
+            git commit -m "chore: bump build ${LATEST} → ${NEXT} [skip ci]"
+            git push origin "$BRANCH"
+            echo "::notice::build 自增成功：${LATEST} → ${NEXT}"
+          fi

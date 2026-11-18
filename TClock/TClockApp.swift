@@ -51,6 +51,9 @@ final class AppDelegate: NSObject, @preconcurrency NSApplicationDelegate {
         if ProcessInfo.processInfo.environment["TCLOCK_SHOW_BUBBLE"] == "1" {
             manager.debugShowBubble()
         }
+        if ProcessInfo.processInfo.environment["TCLOCK_SHOW_ABOUT"] == "1" {
+            manager.presentAbout()
+        }
         // 调试：defaults write com.wdk.TClock tclock.debugBubble -bool true 后启动即展示气泡
         if defaults.bool(forKey: "tclock.debugBubble") {
             defaults.set(false, forKey: "tclock.debugBubble")
