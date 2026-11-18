@@ -29,53 +29,86 @@ struct SettingsView: View {
         )
     }
 
-    // MARK: - 时间格式
+    // MARK: - 日期 / 时间格式
 
     private var formatRows: some View {
         Group {
-            LabeledContent("settings.format.label") {
+            // 日期：显隐与格式是两个独立控件；隐藏时格式输入置灰。
+            LabeledContent("settings.date.label") {
                 HStack(spacing: AppTheme.Space.sm) {
                     // 占位符留空：macOS 的 roundedBorder TextField 在定宽下会把较长占位符
                     // 溢出绘制到输入框右侧，看起来像重复了两份格式串。
-                    // 格式说明放到下方说明行与 .help 里。
-                    TextField("", text: $settings.formatPattern)
+                    TextField("", text: $settings.datePattern)
                         .textFieldStyle(.roundedBorder)
                         .font(.body.monospaced())
                         .frame(width: controlWidth - 40)
-                        .help("settings.format.help")
+                        .help("settings.date.help")
 
-                    formatMenu
+                    dateMenu
                 }
             }
+            .disabled(!settings.showDate)
 
-            Text("settings.format.symbols")
-                .font(.footnote)
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
+            // 时间只有 24 / 12 小时制两种，不再允许自由输入格式串。
+            LabeledContent("settings.time.hourCycle") {
+                Picker("settings.time.hourCycle", selection: $settings.hourCycle) {
+                    ForEach(HourCycle.allCases) { cycle in
+                        Text(cycle.display).tag(cycle)
+                    }
+                }
+                .labelsHidden()
+                .pickerStyle(.segmented)
+                .frame(width: controlWidth)
+            }
 
-            Toggle("settings.format.blink", isOn: $settings.blinkSeparator)
-                .toggleStyle(.switch)
+            HStack(spacing: AppTheme.Space.xl) {
+                Toggle("settings.date.show", isOn: $settings.showDate)
+                    .toggleStyle(.checkbox)
+                    .fixedSize()
+
+                Toggle("settings.time.showWeekday", isOn: $settings.showWeekday)
+                    .toggleStyle(.checkbox)
+                    .fixedSize()
+                    .help("settings.time.showWeekday.help")
+
+                Spacer(minLength: 0)
+            }
+
+            HStack(spacing: AppTheme.Space.xl) {
+                // 上下午开关始终可见可设置；24 小时制下没有上下午概念，置灰但保留状态。
+                Toggle("settings.time.showAMPM", isOn: $settings.showAMPM)
+                    .toggleStyle(.checkbox)
+                    .fixedSize()
+                    .disabled(settings.hourCycle != .twelve)
+                    .help("settings.time.showAMPM.help")
+
+                Toggle("settings.format.blink", isOn: $settings.blinkSeparator)
+                    .toggleStyle(.checkbox)
+                    .fixedSize()
+
+                Spacer(minLength: 0)
+            }
         }
     }
 
-    /// 「常用格式」菜单：右侧图标按钮，菜单里是 9 个预设。
-    private var formatMenu: some View {
+    /// 日期格式预设：右侧图标按钮，菜单里是只含年月日的常用格式。
+    private var dateMenu: some View {
         Menu {
-            ForEach(TimeFormatPreset.all) { preset in
+            ForEach(DateFormatPreset.all) { preset in
                 Button {
-                    settings.formatPattern = preset.pattern
+                    settings.datePattern = preset.pattern
                 } label: {
                     Text("\(preset.title)　\(preset.pattern)")
                 }
             }
         } label: {
-            Image(systemName: "clock.arrow.circlepath")
+            Image(systemName: "calendar")
         }
         .menuStyle(.borderlessButton)
         .menuIndicator(.hidden)
         .fixedSize()
-        .help("settings.format.menu.help")
-        .accessibilityLabel("settings.format.menu.label")
+        .help("settings.date.menu.help")
+        .accessibilityLabel("settings.date.menu.label")
     }
 
     // MARK: - 外观

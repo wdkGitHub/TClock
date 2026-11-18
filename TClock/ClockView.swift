@@ -2,9 +2,14 @@ import SwiftUI
 
 /// 时钟显示视图。
 ///
-/// - 使用 `TimelineView` 按整秒对齐刷新（起点对齐到下一个整秒，避免秒数慢半拍），
-///   半秒节拍用于冒号闪烁。
-/// - 渲染完全由 `AppSettings` 驱动：格式串、字体、字号、颜色、透明度、阴影、冒号闪烁。
+/// 布局固定为三行，**时间是主体**：
+/// - 上方：日期（字号约为主体 1/4，居中）；
+/// - 中间：24 / 12 小时制的时:分:秒（用户设置的字号、字体、颜色）；
+/// - 下方：左侧星期、右侧上午/下午，同一行且左右边缘与主体时间对齐。
+///
+/// 三行的字体与宽度都由 `AppSettings.clockLayout(scale:)` 一次算好，
+/// 视图里给每行定死 frame，窗口尺寸测量也用同一份结果，不会出现数字跳动或被裁切。
+/// - `TimelineView` 按整秒对齐刷新（起点对齐到下一个整秒，避免秒数慢半拍）；
 /// - `scale` 供设置页缩略预览使用。
 struct ClockView: View {
     @EnvironmentObject private var settings: AppSettings
@@ -15,39 +20,77 @@ struct ClockView: View {
     @State private var anchor = ClockView.alignedAnchor()
 
     var body: some View {
-        // 每秒一拍：更新数字，并按秒的奇偶翻转冒号。
         TimelineView(.periodic(from: anchor, by: 1)) { context in
-            label(at: context.date)
+            // ZStack 吃掉面板的全部空间，再把三行整体居中；
+            // 直接给 VStack 加 maxHeight:.infinity 会把内容顶到上边。
+            ZStack(alignment: .center) {
+                rows(at: context.date)
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .allowsHitTesting(false)
     }
 
-    private func label(at date: Date) -> some View {
-        let font = settings.resolvedFont(scale: scale)
+    private func rows(at date: Date) -> some View {
+        let layout = settings.clockLayout(scale: scale)
+        let mainSize = CGFloat(settings.fontSize) * scale
         // 双阴影：一圈窄轮廓 + 一圈柔光，保证白字在浅色/深色壁纸上都清晰。
-        // 比例与颜色都取自统一 token，组件内不再写死视觉常量。
-        let edgeRadius = max(1, CGFloat(settings.fontSize) * scale * AppTheme.Metrics.clockEdgeRatio)
-        let glowRadius = CGFloat(settings.fontSize) * scale * AppTheme.Metrics.clockGlowRatio
+        let edgeRadius = max(1, mainSize * AppTheme.Metrics.clockEdgeRatio)
+        let glowRadius = mainSize * AppTheme.Metrics.clockGlowRatio
+        let color = Color(nsColor: settings.textColor)
 
-        return Text(displayText(for: date))
-            .font(Font(font))
-            .monospacedDigit()
-            .foregroundStyle(Color(nsColor: settings.textColor))
-            .opacity(settings.opacity)
-            .modifier(
-                TextGlow(
-                    enabled: settings.shadowEnabled,
-                    edgeRadius: edgeRadius,
-                    glowRadius: glowRadius
-                )
+        return VStack(alignment: .leading, spacing: layout.rowGap) {
+            if layout.showsDate {
+                Text(settings.dateText(for: date))
+                    .font(Font(layout.dateFont))
+                    .monospacedDigit()
+                    .foregroundStyle(color)
+                    // 先按固有宽度排版再放进定宽 frame：宽度就算略小于实际也不会被截成「…」。
+                    .fixedSize(horizontal: true, vertical: false)
+                    .frame(width: layout.frameWidth, height: layout.dateHeight, alignment: .leading)
+            }
+
+            Text(displayTime(for: date))
+                .font(Font(layout.timeFont))
+                .monospacedDigit()
+                .foregroundStyle(color)
+                .fixedSize(horizontal: true, vertical: false)
+                .frame(width: layout.frameWidth, height: layout.timeHeight, alignment: .leading)
+
+            if layout.showsDetail {
+                HStack(alignment: .firstTextBaseline, spacing: 0) {
+                    Text(settings.weekdayText(for: date))
+                        .font(Font(layout.detailFont))
+                        .foregroundStyle(color)
+                        .fixedSize(horizontal: true, vertical: false)
+
+                    Spacer(minLength: AppTheme.Metrics.clockDetailMinGap)
+
+                    Text(settings.ampmText(for: date))
+                        .font(Font(layout.detailFont))
+                        .foregroundStyle(color)
+                        .fixedSize(horizontal: true, vertical: false)
+                }
+                // 只用主体时间的宽度：三行左边缘一致，同时右端精确落在「秒」下方；
+                // 日期格式再长也不会把上下午推出秒的右侧。
+                .frame(width: layout.timeWidth, height: layout.detailHeight, alignment: .leading)
+            }
+        }
+        .fixedSize()
+        .opacity(settings.opacity)
+        .modifier(
+            TextGlow(
+                enabled: settings.shadowEnabled,
+                edgeRadius: edgeRadius,
+                glowRadius: glowRadius
             )
-            .fixedSize()
+        )
     }
 
-    /// 生成显示文本。闪烁时把冒号字符设为透明 —— 宽度不变，所以窗口和数字都不会跳动。
-    private func displayText(for date: Date) -> AttributedString {
-        let raw = settings.text(for: date)
+    /// 主体时间文本。闪烁时把冒号字符设为透明 —— 宽度不变，所以窗口和数字都不会跳动。
+    private func displayTime(for date: Date) -> AttributedString {
+        let raw = settings.timeText(for: date)
         var attributed = AttributedString(raw)
 
         guard settings.blinkSeparator else { return attributed }

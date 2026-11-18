@@ -1,4 +1,5 @@
 import AppKit
+import QuartzCore
 import SwiftUI
 
 /// Apple / macOS 原生观感的统一设计 token。
@@ -172,6 +173,38 @@ enum AppTheme {
         static var medium: Font.Weight { .medium }
     }
 
+    // MARK: - 动效（浮层弹出 / 收起）
+
+    /// 气泡过渡：一次「淡入 + 轻微放大 + 朝时钟方向回位」，收起走同一条曲线反向短播。
+    ///
+    /// 这一版刻意不用弹簧与 anchorPoint 补偿：
+    /// - 弹簧的 `settlingDuration` 会拖长到 0.4s+，既容易和鼠标离开判定撞车，
+    ///   还要靠 `asyncAfter` 猜结束时刻，快速点两下就会出现两组动画打架；
+    /// - 改 anchorPoint 到指针尖要同步补偿 position，静止态几何长期处于偏移状态。
+    ///
+    /// 现在只有一条固定时长的 `CAAnimationGroup`，起始值从 presentation layer 接管，
+    /// 结束由 `CATransaction` completion 收窗，配合代次令牌避免过期回调。
+    enum Motion {
+        /// 弹出：略小 + 略靠近时钟 → 原位，淡入。
+        static let bubblePresentDuration: TimeInterval = 0.22
+        static let bubblePresentScale: CGFloat = 0.97
+        static let bubblePresentOffset: CGFloat = 6
+        /// 收起：快速淡出，只轻微缩小并往时钟方向退一点，不「被吞掉」。
+        static let bubbleDismissDuration: TimeInterval = 0.14
+        static let bubbleDismissScale: CGFloat = 0.985
+        static let bubbleDismissOffset: CGFloat = 4
+
+        /// 弹出曲线：平滑减速，起手不拖沓、收尾不弹跳。
+        static var bubblePresentEase: CAMediaTimingFunction {
+            CAMediaTimingFunction(controlPoints: 0.22, 1, 0.36, 1)
+        }
+
+        /// 收起曲线：起手留住、末尾迅速消失。
+        static var bubbleDismissEase: CAMediaTimingFunction {
+            CAMediaTimingFunction(controlPoints: 0.4, 0, 1, 1)
+        }
+    }
+
     // MARK: - 几何常量（数值保持原样，仅供集中管理）
 
     /// 这些值与窗口尺寸测量、气泡定位直接耦合，属于不可动红线，
@@ -196,5 +229,18 @@ enum AppTheme {
         static let settingsMaxHeight: CGFloat = 900
         /// 设置窗口与时钟重叠时让位到角落的边距。
         static let settingsEdgeMargin: CGFloat = 60
+
+        // MARK: 时钟三行排版（时间为本体，其余两行按比例收敛）
+
+        /// 日期行字号 = 主体字号 × 此系数（有 9pt 下限）。
+        static let clockDateFontRatio: CGFloat = 0.26
+        /// 星期 / 上下午行字号 = 主体字号 × 此系数（有 8pt 下限）。
+        static let clockDetailFontRatio: CGFloat = 0.20
+        /// 星期与上下午同时显示时的最小间距。
+        static let clockDetailMinGap: CGFloat = 12
+        /// 行间距 = 主体字号 × 此系数（最小 2pt）。
+        static let clockRowGapRatio: CGFloat = 0.03
+        /// 窗口宽度安全余量：SwiftUI 等宽数字比 AppKit 度量略宽，留一点余量避免尾部被裁。
+        static let clockWidthSlack: CGFloat = 20
     }
 }

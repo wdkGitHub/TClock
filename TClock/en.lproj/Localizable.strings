@@ -1,11 +1,18 @@
 /* TClock localization. Semantic keys; never localize with display text as key. */
 
-"settings.format.label" = "Format String";
-"settings.format.help" = "Enter a time format, e.g. HH:mm:ss";
-"settings.format.symbols" = "HH 24-hour · hh 12-hour · mm minutes · ss seconds · a AM/PM · EEE weekday · MMM month · yyyy year";
+"settings.date.label" = "Date Format";
+"settings.date.help" = "Applies only to the date line above the clock (year/month/day only): yyyy year · M month · d day · MMM month name";
+"settings.date.show" = "Show Date";
+"settings.date.menu.help" = "Insert a common date format";
+"settings.date.menu.label" = "Common date formats";
+"settings.time.hourCycle" = "Time Format";
+"time.hour24" = "24-hour";
+"time.hour12" = "12-hour";
+"settings.time.showAMPM" = "Show AM/PM";
+"settings.time.showAMPM.help" = "Only available in 12-hour mode; shows AM/PM right-aligned below the seconds";
+"settings.time.showWeekday" = "Show Weekday";
+"settings.time.showWeekday.help" = "Shows the weekday left-aligned below the hour, on the same line as AM/PM";
 "settings.format.blink" = "Blink colon separators";
-"settings.format.menu.help" = "Insert a common format";
-"settings.format.menu.label" = "Common formats";
 "settings.appearance.theme" = "Theme";
 "settings.appearance.theme.help" = "Defaults to the macOS system appearance. Set the clock text color separately below.";
 "settings.appearance.font" = "Font";
@@ -28,15 +35,13 @@
 "settings.behavior.reset.help" = "Move the clock back to its default bottom-left position";
 "settings.behavior.corner.help" = "Move the clock to one of the four screen corners; bottom left is the default";
 "common.defaultPosition" = "Default Position (Bottom Left)";
-"preset.hms24" = "24-hour · h:m:s";
-"preset.hm24" = "24-hour · h:m";
-"preset.hms12" = "12-hour · h:m:s";
-"preset.hm12" = "12-hour · h:m";
-"preset.timeWeekday" = "Time · Weekday";
-"preset.dateTime" = "Date · Time";
-"preset.cnDateTime" = "Chinese Date · Time";
-"preset.cnYmdTime" = "Chinese Y/M/D · Time";
-"preset.weekdayDayMonthTime" = "Weekday Day Month · Time";
+"preset.date.iso" = "Year-Month-Day";
+"preset.date.slash" = "Year/Month/Day";
+"preset.date.dot" = "Year.Month.Day";
+"preset.date.cnFull" = "Chinese Y/M/D";
+"preset.date.cnShort" = "Chinese M/D";
+"preset.date.us" = "Month/Day/Year";
+"preset.date.western" = "Month D, Year";
 "weight.light" = "Light";
 "weight.regular" = "Regular";
 "weight.medium" = "Medium";

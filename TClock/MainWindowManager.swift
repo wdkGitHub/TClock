@@ -292,25 +292,11 @@ final class MainWindowManager: NSObject, NSMenuDelegate {
         updateMenuStates()
     }
 
-    /// 依据当前字体与格式串估算面板尺寸（按“最宽样本”预留，避免时间跳动时窗口忽宽忽窄）。
+    /// 依据三行排版度量估算面板尺寸（按「最宽样本」预留，避免秒数/日期变化时窗口忽宽忽窄）。
     private func contentSize() -> NSSize {
-        let font = settings.resolvedFont()
-        var maxWidth: CGFloat = 0
-        var maxHeight: CGFloat = 0
-
-        for text in settings.probeTexts() {
-            let size = (text as NSString).size(withAttributes: [.font: font])
-            maxWidth = max(maxWidth, size.width)
-            maxHeight = max(maxHeight, size.height)
-        }
-
-        guard maxWidth > 0 else { return NSSize(width: 320, height: 120) }
-
-        let padding = max(10, CGFloat(settings.fontSize) * 0.10)
-        return NSSize(
-            width: ceil(maxWidth + padding * 2),
-            height: ceil(maxHeight + padding * 2)
-        )
+        let layout = settings.clockLayout()
+        guard layout.contentWidth > 0 else { return NSSize(width: 320, height: 120) }
+        return NSSize(width: ceil(layout.contentWidth), height: ceil(layout.contentHeight))
     }
 
     private func resizePanel() {
@@ -494,17 +480,19 @@ final class MainWindowManager: NSObject, NSMenuDelegate {
     private var bubblePanel: InfoBubblePanel?
     private var bubbleHosting: NSHostingView<AnyView>?
     private var isBubbleVisible = false
-    /// 记录当前指针朝向，收起动画需要用同一锚点。
+    /// 记录当前指针朝向：过渡的位移方向跟着它走（从时钟那一侧进出）。
     private var bubbleTailOnTop = false
-    /// 弹出动画播放期间的记录时刻：这段时间内不响应鼠标离开，
-    /// 否则弹出与收起动画打架，会出现「弹出一下又立刻关闭」的闪烁。
+    /// 弹出过渡播放期间不判定鼠标离开，避免「弹出→立刻关闭」闪烁。
     private var bubbleShownAt: CFTimeInterval = 0
+    private var bubblePresentDuration: TimeInterval = AppTheme.Motion.bubblePresentDuration
+    /// 每次开 / 关都递增；过期的 CATransaction completion 凭它自行作废。
+    private var bubbleTransitionID: UInt = 0
 
-    /// 气泡淡入时长；缩放用 `CASpringAnimation` 的 settlingDuration 自行决定。
-    /// 非激活面板上 `animator()` 不可靠，用 Core Animation 直接作用于 backing layer。
-    private let bubbleFadeDuration: TimeInterval = 0.32
-    /// 收起要比弹出干脆：固定短时长、不用回弹弹簧，避免关闭时卡顿感。
-    private let bubbleDismissDuration: TimeInterval = 0.18
+    private static let bubblePresentKey = "bubblePresent"
+    private static let bubbleDismissKey = "bubbleDismiss"
+    /// 鼠标连续多少次（×0.2s）不在时钟/气泡上才收起。3 次 = 0.6s：
+    /// 2 次（0.4s）过于急躁，鼠标顺手一划就消失，读起来像"被抢走"。
+    private static let bubbleMouseAwayTicks = 3
 
     /// 单击时钟：显示 / 收起信息气泡（日期、星期、农历）。
     private func toggleInfoBubble() {
@@ -517,6 +505,9 @@ final class MainWindowManager: NSObject, NSMenuDelegate {
 
     private func showInfoBubble() {
         guard let clock = panel else { return }
+        // 已在显示中：不重播弹出过渡。重复加一次 opacity 0→1 的动画，
+        // 视觉上就是「好端端的气泡忽然闪一下再淡入」。
+        guard !isBubbleVisible else { return }
 
         let info = ClockInfoProvider.current()
         let root = AnyView(InfoBubbleView(info: info))
@@ -586,159 +577,145 @@ final class MainWindowManager: NSObject, NSMenuDelegate {
         }
         bubbleTailOnTop = tailOnTop
 
+        // 顺序很关键：先把 layer 归零，再 orderFront，最后才挂动画。
+        // 上一版顺序是「orderFront → 挂动画」，窗口会在挂动画之前先以
+        // layer 的 model 值（opacity=1）刷一帧，每次打开都先「闪亮一下」再淡入。
+        let fromTransform = Self.bubbleTransform(
+            scale: AppTheme.Motion.bubblePresentScale,
+            offset: AppTheme.Motion.bubblePresentOffset,
+            tailOnTop: tailOnTop
+        )
+
+        if let layer = hosting.layer {
+            // 上一次收起可能还没走完，先摘掉，避免两组动画叠加。
+            bubbleTransitionID &+= 1
+            layer.removeAnimation(forKey: Self.bubbleDismissKey)
+            layer.removeAnimation(forKey: Self.bubblePresentKey)
+            Self.setLayerState(layer, opacity: 0, transform: fromTransform)
+        }
+
         bubble.setFrame(NSRect(origin: origin, size: size), display: true)
         bubble.alphaValue = 1
         bubble.orderFrontRegardless()
 
-        // 弹出过渡：Dock 式弹性缩放（scale 0.82→1，带回弹超调）+ 淡入。
-        // 非激活面板上 animator() 不可靠，直接对 hosting 的 backing layer 用 Core Animation。
-        // model 值先落到最终态（opacity=1 / scale=1），动画只做视觉过渡，
-        // 结束后回弹到 model 值，不会跳回初始态。
-        // 内容四周有 shadowMargin 留白，缩放超调的放大不会撞到窗口边界被裁切。
+        // 弹出过渡：轻微放大 + 从时钟方向回位 + 淡入。
+        // 非激活面板上 `animator()` 不可靠，直接对 hosting 的 backing layer 用 Core Animation。
+        // model 值先落到终态，动画只做视觉过渡，播完即停在终态。
         if let layer = hosting.layer {
-            // 把缩放中心移到指针尖：anchorPoint 用 layer 单位坐标，
-            // 同时补偿 position 保持视觉位置不变；动画结束后恢复默认锚点。
-            let anchor = bubbleTailAnchor(layer: layer, tailOnTop: tailOnTop)
-            setLayerAnchor(anchor, on: layer)
-
-            CATransaction.begin()
-            CATransaction.setDisableActions(true)
-            layer.opacity = 1
-            layer.transform = CATransform3DIdentity
-            CATransaction.commit()
+            Self.setLayerState(layer, opacity: 1, transform: CATransform3DIdentity)
 
             let fade = CABasicAnimation(keyPath: "opacity")
             fade.fromValue = 0
             fade.toValue = 1
-            fade.duration = bubbleFadeDuration
-            fade.timingFunction = CAMediaTimingFunction(controlPoints: 0.32, 0, 0.25, 1)
 
-            // 弹簧缩放：从指针尖放大到原尺寸，微超调后回弹（Dock 手感）。
-            let spring = CASpringAnimation(keyPath: "transform.scale")
-            spring.fromValue = 0.82
-            spring.toValue = 1.0
-            spring.mass = 0.7
-            spring.stiffness = 320
-            spring.damping = 18
-            spring.initialVelocity = 0
-            spring.duration = spring.settlingDuration
+            let move = CABasicAnimation(keyPath: "transform")
+            move.fromValue = NSValue(caTransform3D: fromTransform)
+            move.toValue = NSValue(caTransform3D: CATransform3DIdentity)
 
-            let duration = max(bubbleFadeDuration, spring.settlingDuration)
             let group = CAAnimationGroup()
-            group.animations = [fade, spring]
-            group.duration = duration
-            layer.add(group, forKey: "bubblePresent")
-
-            // 动画播完后把锚点还原为默认，避免静止态 geometry 长期处于补偿状态。
-            DispatchQueue.main.asyncAfter(deadline: .now() + duration + 0.05) { [weak self, weak layer] in
-                guard let self, let layer, self.isBubbleVisible,
-                      layer.animation(forKey: "bubblePresent") == nil else { return }
-                Self.resetLayerAnchor(on: layer)
-            }
+            group.animations = [fade, move]
+            group.duration = AppTheme.Motion.bubblePresentDuration
+            group.timingFunction = AppTheme.Motion.bubblePresentEase
+            layer.add(group, forKey: Self.bubblePresentKey)
         }
 
+        bubblePresentDuration = AppTheme.Motion.bubblePresentDuration
         isBubbleVisible = true
         bubbleShownAt = CACurrentMediaTime()
         // 鼠标离开时钟（与气泡）范围后自动收起
         startMouseWatch()
     }
 
-    /// 指针尖在 hosting layer 中的归一化锚点。
-    /// 视图外层留了 shadowMargin，指针尖落在主体边缘中央。
-    private func bubbleTailAnchor(layer: CALayer, tailOnTop: Bool) -> CGPoint {
-        let w = layer.bounds.width
-        let h = layer.bounds.height
-        guard w > 0, h > 0 else { return CGPoint(x: 0.5, y: 0.5) }
-        let inset = AppTheme.Metrics.bubbleShadowMargin
-        // layer 坐标原点在左下；tailOnTop=false 时尖端在底边（y=inset），
-        // tailOnTop=true 时在顶边（y=h-inset）。
-        let tipY = tailOnTop ? (h - inset) : inset
-        return CGPoint(x: 0.5, y: min(1, max(0, tipY / h)))
+    /// 过渡用的 transform：轻微缩放 + 朝时钟方向的位移。
+    /// layer 的 y 向上为正：气泡挂在时钟上方时从下方进入，挂在下方时从上方进入。
+    private static func bubbleTransform(scale: CGFloat, offset: CGFloat, tailOnTop: Bool) -> CATransform3D {
+        var transform = CATransform3DMakeScale(scale, scale, 1)
+        transform = CATransform3DTranslate(transform, 0, tailOnTop ? offset : -offset, 0)
+        return transform
     }
 
-    /// 设置 anchorPoint 并补偿 position，保持内容视觉位置不变。
-    private func setLayerAnchor(_ anchor: CGPoint, on layer: CALayer) {
-        let old = layer.anchorPoint
-        let pos = layer.position
+    /// 改 layer 的 model 值时不触发隐式过渡动画。
+    /// 这些赋值都是「立刻切入某个状态」，带 0.25s 隐式动画会和显式动画打架。
+    private static func withLayerActionsDisabled(_ body: () -> Void) {
         CATransaction.begin()
         CATransaction.setDisableActions(true)
-        layer.anchorPoint = anchor
-        layer.position = CGPoint(
-            x: pos.x + (anchor.x - old.x) * layer.bounds.width,
-            y: pos.y + (anchor.y - old.y) * layer.bounds.height
-        )
+        body()
         CATransaction.commit()
     }
 
-    /// 还原为默认锚点 (0.5, 0.5) 并补偿 position。
-    private static func resetLayerAnchor(on layer: CALayer) {
-        let old = layer.anchorPoint
-        guard old.x != 0.5 || old.y != 0.5 else { return }
-        let pos = layer.position
-        let center = CGPoint(x: 0.5, y: 0.5)
-        CATransaction.begin()
-        CATransaction.setDisableActions(true)
-        layer.anchorPoint = center
-        layer.position = CGPoint(
-            x: pos.x + (center.x - old.x) * layer.bounds.width,
-            y: pos.y + (center.y - old.y) * layer.bounds.height
-        )
-        CATransaction.commit()
+    private static func setLayerState(_ layer: CALayer, opacity: Float, transform: CATransform3D) {
+        withLayerActionsDisabled {
+            layer.opacity = opacity
+            layer.transform = transform
+        }
     }
 
     /// - Parameter animated: 移动时钟触发的关闭传 false（立即消失，不等动画）；
-    ///   点击收起 / 鼠标离开传 true（播放缩放淡出）。
+    ///   点击收起 / 鼠标离开传 true（播放淡出 + 轻微退位）。
     private func hideInfoBubble(animated: Bool = true) {
         stopMouseWatch()
         guard let bubble = bubblePanel, isBubbleVisible else { return }
         isBubbleVisible = false
+        bubbleTransitionID &+= 1
+        let token = bubbleTransitionID
 
-        // 移除弹出动画前，先把 model 的 opacity 固化为其当前呈现值，
-        // 避免 removeAnimation 的那一帧跳回全亮（闪烁的直接原因）。
-        if let preLayer = bubbleHosting?.layer {
-            let shown = preLayer.presentation()?.opacity ?? 1
-            CATransaction.begin()
-            CATransaction.setDisableActions(true)
-            preLayer.opacity = shown
-            CATransaction.commit()
-        }
-        bubbleHosting?.layer?.removeAnimation(forKey: "bubblePresent")
-
-        guard animated, let layer = bubbleHosting?.layer else {
+        guard let layer = bubbleHosting?.layer else {
             bubble.alphaValue = 0
             bubble.orderOut(nil)
             return
         }
 
-        // 收起：以同一指针尖为锚点缩小 + 淡出。用固定短时长 + ease-in，
-        // 不用回弹弹簧（settlingDuration 会拖到 0.4s+，是关闭卡顿的来源）。
-        let anchor = bubbleTailAnchor(layer: layer, tailOnTop: bubbleTailOnTop)
-        setLayerAnchor(anchor, on: layer)
+        // 从「当前呈现值」接管，而不是假设停在 1.0：
+        // 弹出还没播完就收起时，按终态起算会先跳到全亮再淡出，就是「快速点两下会闪」。
+        let presented = layer.presentation()
+        let fromOpacity = presented?.opacity ?? layer.opacity
+        let fromTransform = presented?.transform ?? layer.transform
+        // 先把 model 固化成当前呈现值，再摘动画 —— removeAnimation 那一帧才不会跳亮。
+        Self.setLayerState(layer, opacity: fromOpacity, transform: fromTransform)
+        layer.removeAnimation(forKey: Self.bubblePresentKey)
+        layer.removeAnimation(forKey: Self.bubbleDismissKey)
 
-        // 从当前实际显示状态接管，而不是固定假设 opacity=1：
-        // 若弹出动画尚未播完就被收起，直接按 1 起算会瞬间跳亮，产生闪烁。
-        let currentOpacity = layer.presentation()?.opacity ?? 1
+        guard animated else {
+            Self.setLayerState(layer, opacity: 0, transform: CATransform3DIdentity)
+            bubble.alphaValue = 0
+            bubble.orderOut(nil)
+            return
+        }
+
+        let toTransform = Self.bubbleTransform(
+            scale: AppTheme.Motion.bubbleDismissScale,
+            offset: AppTheme.Motion.bubbleDismissOffset,
+            tailOnTop: bubbleTailOnTop
+        )
+
         let fade = CABasicAnimation(keyPath: "opacity")
-        fade.fromValue = currentOpacity
+        fade.fromValue = fromOpacity
         fade.toValue = 0
 
-        let shrink = CABasicAnimation(keyPath: "transform.scale")
-        shrink.fromValue = 1.0
-        shrink.toValue = 0.88
+        let move = CABasicAnimation(keyPath: "transform")
+        move.fromValue = NSValue(caTransform3D: fromTransform)
+        move.toValue = NSValue(caTransform3D: toTransform)
 
         let group = CAAnimationGroup()
-        group.animations = [fade, shrink]
-        group.duration = bubbleDismissDuration
-        group.timingFunction = CAMediaTimingFunction(controlPoints: 0.4, 0, 1, 1)
-        layer.add(group, forKey: "bubbleDismiss")
+        group.animations = [fade, move]
+        group.duration = AppTheme.Motion.bubbleDismissDuration
+        group.timingFunction = AppTheme.Motion.bubbleDismissEase
+        group.isRemovedOnCompletion = true
 
-        // 时长一到立即移除，不等回弹收尾。
-        DispatchQueue.main.asyncAfter(deadline: .now() + bubbleDismissDuration + 0.01) { [weak self, weak bubble] in
-            guard let self, let bubble, !self.isBubbleVisible else { return }
-            Self.resetLayerAnchor(on: layer)
+        // model 先落到隐藏态，动画只负责从当前呈现值过渡到它；
+        // 播完由 CATransaction completion 收窗，不用 asyncAfter 猜时长。
+        Self.setLayerState(layer, opacity: 0, transform: toTransform)
+
+        CATransaction.begin()
+        CATransaction.setCompletionBlock { [weak self, weak bubble, weak layer] in
+            guard let self, let bubble, let layer,
+                  self.bubbleTransitionID == token, !self.isBubbleVisible else { return }
+            Self.setLayerState(layer, opacity: 0, transform: CATransform3DIdentity)
             bubble.alphaValue = 0
             bubble.orderOut(nil)
         }
+        layer.add(group, forKey: Self.bubbleDismissKey)
+        CATransaction.commit()
     }
 
     // MARK: 鼠标离开检测
@@ -772,7 +749,8 @@ final class MainWindowManager: NSObject, NSMenuDelegate {
 
         // 弹出动画播放期间不判定离开：否则点击后鼠标一动，收起动画会打断
         // 尚未播完的弹出动画，出现「弹出→立刻关闭」的闪烁。
-        if CACurrentMediaTime() - bubbleShownAt < bubbleFadeDuration {
+        // 过渡是固定时长，保护窗口与动画严格等长，不会像弹簧那样有回弹拖尾。
+        if CACurrentMediaTime() - bubbleShownAt < bubblePresentDuration {
             mouseAwayTicks = 0
             return
         }
@@ -785,9 +763,9 @@ final class MainWindowManager: NSObject, NSMenuDelegate {
             return
         }
 
-        // 连续两次（约 0.4 秒）离开才收起，避免鼠标掠过时闪烁。
+        // 连续几次（约 0.6 秒）离开才收起，避免鼠标掠过时闪烁。
         mouseAwayTicks += 1
-        if mouseAwayTicks >= 2 {
+        if mouseAwayTicks >= Self.bubbleMouseAwayTicks {
             hideInfoBubble()
         }
     }

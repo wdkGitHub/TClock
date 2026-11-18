@@ -1,11 +1,18 @@
 /* TClock localization. Semantic keys; never localize with display text as key. */
 
-"settings.format.label" = "格式串";
-"settings.format.help" = "输入时间格式串，例如 HH:mm:ss";
-"settings.format.symbols" = "HH 24 小时 · hh 12 小时 · mm 分 · ss 秒 · a 上午/下午 · EEE 星期 · MMM 月 · yyyy 年";
+"settings.date.label" = "日期格式";
+"settings.date.help" = "只作用于时间上方的日期行（仅年月日）：yyyy 年 · M 月 · d 日 · MMM 月份名";
+"settings.date.show" = "显示日期";
+"settings.date.menu.help" = "插入常用日期格式";
+"settings.date.menu.label" = "常用日期格式";
+"settings.time.hourCycle" = "时间制式";
+"time.hour24" = "24 小时";
+"time.hour12" = "12 小时";
+"settings.time.showAMPM" = "显示上下午";
+"settings.time.showAMPM.help" = "仅 12 小时制可用；在秒的下方右侧显示上午 / 下午";
+"settings.time.showWeekday" = "显示星期";
+"settings.time.showWeekday.help" = "在小时下方左侧显示星期，与上下午同一行";
 "settings.format.blink" = "分隔符冒号闪烁";
-"settings.format.menu.help" = "插入常用格式";
-"settings.format.menu.label" = "常用格式";
 "settings.appearance.theme" = "主题";
 "settings.appearance.theme.help" = "默认跟随 macOS 系统外观；时钟文字颜色在下方单独设置。";
 "settings.appearance.font" = "字体";
@@ -28,15 +35,13 @@
 "settings.behavior.reset.help" = "把时钟放回左下角默认位置";
 "settings.behavior.corner.help" = "把时钟放到屏幕四个角之一，左下角为默认位置";
 "common.defaultPosition" = "默认位置（左下角）";
-"preset.hms24" = "24 小时 · 时:分:秒";
-"preset.hm24" = "24 小时 · 时:分";
-"preset.hms12" = "12 小时 · 时:分:秒";
-"preset.hm12" = "12 小时 · 时:分";
-"preset.timeWeekday" = "时间 · 星期";
-"preset.dateTime" = "日期 · 时间";
-"preset.cnDateTime" = "中文日期 · 时间";
-"preset.cnYmdTime" = "中文年月日 · 时间";
-"preset.weekdayDayMonthTime" = "星期 日 月 · 时间";
+"preset.date.iso" = "年-月-日";
+"preset.date.slash" = "年/月/日";
+"preset.date.dot" = "年.月.日";
+"preset.date.cnFull" = "中文年月日";
+"preset.date.cnShort" = "中文月日";
+"preset.date.us" = "月/日/年";
+"preset.date.western" = "月份名 日, 年";
 "weight.light" = "细体";
 "weight.regular" = "常规";
 "weight.medium" = "中等";

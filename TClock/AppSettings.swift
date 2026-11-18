@@ -1,5 +1,6 @@
 import AppKit
 import Combine
+import CoreText
 import ServiceManagement
 
 /// 设置发生变化时广播（窗口管理器据此重排窗口、切换层级与穿透状态）。
@@ -7,26 +8,118 @@ extension Notification.Name {
     static let tclockSettingsChanged = Notification.Name("com.tclock.settingsChanged")
 }
 
-// MARK: - 时间格式预设
+// MARK: - 日期格式预设
 
-/// 常用时间格式预设。`pattern` 直接作为 `DateFormatter.dateFormat` 使用。
-struct TimeFormatPreset: Identifiable, Hashable {
+/// 日期行常用格式预设。`pattern` 直接作为 `DateFormatter.dateFormat` 使用。
+/// 时间本身不再允许自定义格式，只由「24 / 12 小时制」决定。
+struct DateFormatPreset: Identifiable, Hashable {
     let pattern: String
     let title: String
 
     var id: String { pattern }
 
-    static let all: [TimeFormatPreset] = [
-        TimeFormatPreset(pattern: "HH:mm:ss", title: NSLocalizedString("preset.hms24", comment: "")),
-        TimeFormatPreset(pattern: "HH:mm", title: NSLocalizedString("preset.hm24", comment: "")),
-        TimeFormatPreset(pattern: "hh:mm:ss a", title: NSLocalizedString("preset.hms12", comment: "")),
-        TimeFormatPreset(pattern: "hh:mm a", title: NSLocalizedString("preset.hm12", comment: "")),
-        TimeFormatPreset(pattern: "HH:mm:ss EEE", title: NSLocalizedString("preset.timeWeekday", comment: "")),
-        TimeFormatPreset(pattern: "yyyy-MM-dd HH:mm:ss", title: NSLocalizedString("preset.dateTime", comment: "")),
-        TimeFormatPreset(pattern: "MM月dd日 EEE HH:mm", title: NSLocalizedString("preset.cnDateTime", comment: "")),
-        TimeFormatPreset(pattern: "yyyy年M月d日 HH:mm:ss", title: NSLocalizedString("preset.cnYmdTime", comment: "")),
-        TimeFormatPreset(pattern: "EEE dd MMM HH:mm:ss", title: NSLocalizedString("preset.weekdayDayMonthTime", comment: "")),
+    /// 只含年月日的预设：星期不出现在日期行，由下方独立开关控制。
+    static let all: [DateFormatPreset] = [
+        DateFormatPreset(pattern: "yyyy-MM-dd", title: NSLocalizedString("preset.date.iso", comment: "")),
+        DateFormatPreset(pattern: "yyyy/MM/dd", title: NSLocalizedString("preset.date.slash", comment: "")),
+        DateFormatPreset(pattern: "yyyy.MM.dd", title: NSLocalizedString("preset.date.dot", comment: "")),
+        DateFormatPreset(pattern: "yyyy年M月d日", title: NSLocalizedString("preset.date.cnFull", comment: "")),
+        DateFormatPreset(pattern: "M月d日", title: NSLocalizedString("preset.date.cnShort", comment: "")),
+        DateFormatPreset(pattern: "MM/dd/yyyy", title: NSLocalizedString("preset.date.us", comment: "")),
+        DateFormatPreset(pattern: "MMM d, yyyy", title: NSLocalizedString("preset.date.western", comment: "")),
     ]
+}
+
+// MARK: - 时间制式
+
+/// 主体时间只有两种固定格式：24 小时制 / 12 小时制，秒始终显示。
+enum HourCycle: String, CaseIterable, Identifiable {
+    case twentyFour
+    case twelve
+
+    var id: String { rawValue }
+
+    var display: String {
+        switch self {
+        case .twentyFour: return NSLocalizedString("time.hour24", comment: "")
+        case .twelve: return NSLocalizedString("time.hour12", comment: "")
+        }
+    }
+
+    var timePattern: String {
+        switch self {
+        case .twentyFour: return "HH:mm:ss"
+        case .twelve: return "hh:mm:ss"
+        }
+    }
+}
+
+// MARK: - 时钟排版度量
+
+/// 一次算清「日期 / 时间 / 星期·上下午」三行的字体与尺寸。
+/// `ClockView` 用它给每行定 frame，`MainWindowManager.contentSize()` 用它定面板大小，
+/// 两边共用同一份度量，窗口才不会裁掉文字或留一大块空白。
+struct ClockLayout {
+    let timeFont: NSFont
+    let dateFont: NSFont
+    let detailFont: NSFont
+
+    /// 主体时间的最宽宽度（数字放宽成 8 后的测量值）。
+    let timeWidth: CGFloat
+    /// 三行共用的宽度：以主体时间为主，日期 / 星期·上下午更宽时才撑开。
+    /// 三行都用同一个值 + `.leading`，左边缘天然对齐，下方行右端落在秒下方。
+    let frameWidth: CGFloat
+
+    let dateHeight: CGFloat
+    let timeHeight: CGFloat
+    let detailHeight: CGFloat
+    let rowGap: CGFloat
+
+    let showsDate: Bool
+    let showsDetail: Bool
+
+    /// 水平 / 垂直留白已计入，另含安全余量：等宽数字在 SwiftUI 里比 AppKit 度量略宽，
+    /// 没有这段余量时窗口会把最后一个字符裁成「…」。
+    var contentWidth: CGFloat { frameWidth + horizontalPadding * 2 + AppTheme.Metrics.clockWidthSlack }
+    var contentHeight: CGFloat {
+        var height = timeHeight
+        if showsDate { height += dateHeight + rowGap }
+        if showsDetail { height += detailHeight + rowGap }
+        return height + verticalPadding * 2 + 2
+    }
+
+    private let horizontalPadding: CGFloat
+    private let verticalPadding: CGFloat
+
+    init(
+        timeFont: NSFont,
+        dateFont: NSFont,
+        detailFont: NSFont,
+        timeWidth: CGFloat,
+        frameWidth: CGFloat,
+        dateHeight: CGFloat,
+        timeHeight: CGFloat,
+        detailHeight: CGFloat,
+        rowGap: CGFloat,
+        showsDate: Bool,
+        showsDetail: Bool,
+        horizontalPadding: CGFloat,
+        verticalPadding: CGFloat
+    ) {
+        self.timeFont = timeFont
+        self.dateFont = dateFont
+        self.detailFont = detailFont
+        self.timeWidth = timeWidth
+        self.frameWidth = frameWidth
+        self.dateHeight = dateHeight
+        self.timeHeight = timeHeight
+        self.detailHeight = detailHeight
+        self.rowGap = rowGap
+        self.showsDate = showsDate
+        self.showsDetail = showsDetail
+        self.horizontalPadding = horizontalPadding
+        self.verticalPadding = verticalPadding
+    }
 }
 
 // MARK: - 字重
@@ -212,13 +305,26 @@ final class AppSettings: ObservableObject {
 
     // MARK: 显示格式
 
-    /// `DateFormatter` 格式串，例如 `HH:mm:ss`、`yyyy-MM-dd HH:mm`。
-    @Published var formatPattern: String {
+    /// 是否在时间上方显示日期行。
+    @Published var showDate: Bool { didSet { sync() } }
+    /// 日期行格式串；留空时回退到 `yyyy-MM-dd`。时间本身不可自定义格式。
+    @Published var datePattern: String {
         didSet {
-            rebuildFormatter()
+            rebuildFormatters()
             sync()
         }
     }
+    /// 主体时间：24 小时制 / 12 小时制（秒始终显示）。
+    @Published var hourCycle: HourCycle {
+        didSet {
+            rebuildFormatters()
+            sync()
+        }
+    }
+    /// 12 小时制时，在秒的下方右侧显示上午 / 下午。
+    @Published var showAMPM: Bool { didSet { sync() } }
+    /// 在小时下方左侧显示星期，与上下午同一行。
+    @Published var showWeekday: Bool { didSet { sync() } }
 
     // MARK: 外观
 
@@ -252,14 +358,21 @@ final class AppSettings: ObservableObject {
     /// 批量修改时暂停广播，避免一次操作触发多次重排。
     private var isSuspended = false
 
-    private var formatter = DateFormatter()
+    private var dateFormatter = DateFormatter()
+    private var timeFormatter = DateFormatter()
+    private var ampmFormatter = DateFormatter()
+    private var weekdayFormatter = DateFormatter()
 
     // MARK: - 初始化
 
     private init() {
         let defaults = UserDefaults.standard
 
-        self.formatPattern = defaults.string(forKey: Keys.pattern) ?? "HH:mm:ss"
+        self.showDate = defaults.object(forKey: Keys.showDate) as? Bool ?? true
+        self.datePattern = defaults.string(forKey: Keys.datePattern) ?? "yyyy-MM-dd"
+        self.hourCycle = HourCycle(rawValue: defaults.string(forKey: Keys.hourCycle) ?? "") ?? .twentyFour
+        self.showAMPM = defaults.object(forKey: Keys.showAMPM) as? Bool ?? true
+        self.showWeekday = defaults.object(forKey: Keys.showWeekday) as? Bool ?? true
         self.fontFamily = defaults.string(forKey: Keys.family) ?? FontCatalog.systemFamily
         self.fontSize = defaults.object(forKey: Keys.size) as? Double ?? 96
         self.fontWeight = FontWeightOption(rawValue: defaults.string(forKey: Keys.weight) ?? "") ?? .regular
@@ -291,66 +404,189 @@ final class AppSettings: ObservableObject {
         self.originY = defaults.object(forKey: Keys.y) as? Double ?? 0
         self.hasOrigin = defaults.object(forKey: Keys.hasOrigin) as? Bool ?? false
 
-        rebuildFormatter()
+        rebuildFormatters()
     }
 
-    // MARK: - 时间格式化
+    // MARK: - 文本生成
 
-    private func rebuildFormatter() {
+    /// App 生效语言的 locale 标识（跟随应用内语言切换，而不是系统偏好语言）。
+    private static var effectiveIdentifier: String {
+        Bundle.main.preferredLocalizations.first ?? Locale.current.identifier
+    }
+
+    private func makeFormatter(_ pattern: String, twelveHour: Bool = false) -> DateFormatter {
+        var components = Locale.Components(identifier: Self.effectiveIdentifier)
+        // 中文等 locale 默认 24 小时制，会把 12 小时制的 hh 顶掉（显示 17 点）；
+        // 显式指定 hourCycle 才能按用户选择渲染，同时让 a 输出「上午/下午」而非空串。
+        components.hourCycle = twelveHour ? .oneToTwelve : .zeroToTwentyThree
         let formatter = DateFormatter()
-        let trimmed = formatPattern.trimmingCharacters(in: .whitespacesAndNewlines)
-        let pattern = trimmed.isEmpty ? "HH:mm:ss" : trimmed
-
-        // 1) 应用没有中文本地化时 `Locale.current` 会回退成英文（AM/PM），
-        //    这里改用系统偏好语言，保证「上午/下午」「周五」等按系统语言显示。
-        // 2) 中文等 locale 默认 24 小时制，会把 pattern 里的 hh 顶掉（hh 也显示 17 点）。
-        //    按 pattern 用的是 h（12 小时制）还是 H（24 小时制）显式指定 hourCycle。
-        let baseIdentifier = Locale.preferredLanguages.first ?? Locale.current.identifier
-        var components = Locale.Components(identifier: baseIdentifier)
-        let uses12HourClock = pattern.contains("h") && !pattern.contains("H")
-        components.hourCycle = uses12HourClock ? .oneToTwelve : .zeroToTwentyThree
-
         formatter.locale = Locale(components: components)
         formatter.timeZone = .current
         formatter.dateFormat = pattern
-        self.formatter = formatter
+        return formatter
     }
 
-    /// 按当前格式串渲染时间。
-    func text(for date: Date) -> String {
-        formatter.string(from: date)
+    /// 日期行只呈现年月日：把格式串里未加引号的星期字段符号（E / e / c）剔除。
+    /// 星期由下方独立的开关控制，不在日期行重复出现；引号里的字面文本原样保留。
+    private static func dateOnlyPattern(_ raw: String) -> String {
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return "yyyy-MM-dd" }
+        guard let regex = try? NSRegularExpression(pattern: "'[^']*'|[Eec]+") else { return trimmed }
+
+        let fullRange = NSRange(trimmed.startIndex..., in: trimmed)
+        var result = ""
+        var cursor = trimmed.startIndex
+        for match in regex.matches(in: trimmed, range: fullRange) {
+            guard let range = Range(match.range, in: trimmed) else { continue }
+            result += trimmed[cursor..<range.lowerBound]
+            let token = String(trimmed[range])
+            if token.hasPrefix("'") { result += token }
+            cursor = range.upperBound
+        }
+        result += trimmed[cursor...]
+
+        while result.contains("  ") {
+            result = result.replacingOccurrences(of: "  ", with: " ")
+        }
+        result = result.trimmingCharacters(in: .whitespacesAndNewlines)
+        // 只剩分隔符（例如原本只写了 EEEE）时退回安全默认值。
+        return result.rangeOfCharacter(from: .letters) == nil ? "yyyy-MM-dd" : result
     }
 
-    /// 用于估算窗口尺寸的样本串（把数字放宽成 8，保证按最大宽度布局）。
-    func probeTexts() -> [String] {
+    private func rebuildFormatters() {
+        let pattern = Self.dateOnlyPattern(datePattern)
+        let is12 = hourCycle == .twelve
+
+        dateFormatter = makeFormatter(pattern, twelveHour: is12)
+        timeFormatter = makeFormatter(hourCycle.timePattern, twelveHour: is12)
+        ampmFormatter = makeFormatter("a", twelveHour: true)
+        weekdayFormatter = makeFormatter("EEEE", twelveHour: is12)
+    }
+
+    /// 日期行的显隐是独立开关，与格式串互不干扰。
+    var showsDate: Bool { showDate }
+    /// 上下午只在 12 小时制下有意义。
+    var showsAMPM: Bool { hourCycle == .twelve && showAMPM }
+    /// 下方一行由星期、上下午两者任意一个撑起。
+    var showsDetailRow: Bool { showsAMPM || showWeekday }
+
+    func dateText(for date: Date) -> String {
+        showDate ? dateFormatter.string(from: date) : ""
+    }
+
+    func timeText(for date: Date) -> String {
+        timeFormatter.string(from: date)
+    }
+
+    func ampmText(for date: Date) -> String {
+        showsAMPM ? ampmFormatter.string(from: date) : ""
+    }
+
+    func weekdayText(for date: Date) -> String {
+        showWeekday ? weekdayFormatter.string(from: date) : ""
+    }
+
+    // MARK: - 排版度量
+
+    /// 覆盖一周内星期文本、上下午文本与最长月份文本的样本日期。
+    private func probeDates() -> [Date] {
         var dates: [Date] = []
         let now = Date()
-        // 覆盖一周内的星期文本差异。
         for offset in 0..<8 {
             dates.append(now.addingTimeInterval(Double(offset) * 86_400))
         }
-        // 覆盖两位数小时 / 最长月份文本。
         let calendar = Calendar.current
         for components in [
             DateComponents(year: 2088, month: 12, day: 28, hour: 12, minute: 58, second: 58),
             DateComponents(year: 2088, month: 9, day: 9, hour: 8, minute: 38, second: 38),
+            DateComponents(year: 2088, month: 1, day: 1, hour: 0, minute: 38, second: 38),
         ] {
             if let date = calendar.date(from: components) {
                 dates.append(date)
             }
         }
-        return dates.map { widenDigits(text(for: $0)) }
+        return dates
     }
 
-    private func widenDigits(_ text: String) -> String {
+    /// 数字放宽成 8，按最宽数字预留宽度，秒数变化不会让窗口与下方一行左右跳动。
+    private func widened(_ text: String) -> String {
         String(text.map { $0.isNumber ? "8" : $0 })
+    }
+
+    /// 与 SwiftUI `.monospacedDigit()` 对齐：测量时也打开等宽数字特性。
+    /// 否则 AppKit 量出的时间宽度偏小，SwiftUI 会把末尾的秒数截成「…」。
+    private static func monospacedDigitFont(_ font: NSFont) -> NSFont {
+        let features: [[NSFontDescriptor.FeatureKey: Any]] = [[
+            .typeIdentifier: kNumberSpacingType,
+            .selectorIdentifier: kMonospacedNumbersSelector,
+        ]]
+        let descriptor = font.fontDescriptor.addingAttributes([.featureSettings: features])
+        return NSFont(descriptor: descriptor, size: font.pointSize) ?? font
+    }
+
+    private static func measure(_ texts: [String], font: NSFont) -> (width: CGFloat, height: CGFloat) {
+        var width: CGFloat = 0
+        var height: CGFloat = 0
+        for text in texts {
+            let size = (text as NSString).size(withAttributes: [.font: font])
+            width = max(width, size.width)
+            height = max(height, size.height)
+        }
+        // +2 抵消 NSString 度量与 SwiftUI 行高的细微差，行 frame 与面板尺寸都用它。
+        return (ceil(width), ceil(height) + 2)
+    }
+
+    /// 计算当前设置下的三行排版。`scale` 供设置页缩略预览等比缩小。
+    func clockLayout(scale: CGFloat = 1) -> ClockLayout {
+        let mainSize = max(6, CGFloat(fontSize) * scale)
+        let timeFont = resolvedFont(pointSize: mainSize)
+        let dateFont = resolvedFont(pointSize: max(9, mainSize * AppTheme.Metrics.clockDateFontRatio))
+        let detailFont = resolvedFont(pointSize: max(8, mainSize * AppTheme.Metrics.clockDetailFontRatio))
+
+        // 测量用等宽数字字体，与 ClockView 的 `.monospacedDigit()` 一致。
+        let monoTimeFont = Self.monospacedDigitFont(timeFont)
+        let monoDateFont = Self.monospacedDigitFont(dateFont)
+        let monoDetailFont = Self.monospacedDigitFont(detailFont)
+
+        let dates = probeDates()
+        let time = Self.measure(dates.map { widened(timeText(for: $0)) }, font: monoTimeFont)
+        let date = showsDate
+            ? Self.measure(dates.map { widened(dateText(for: $0)) }, font: monoDateFont)
+            : (width: 0, height: 0)
+        let weekday = showWeekday
+            ? Self.measure(dates.map { weekdayText(for: $0) }, font: monoDetailFont)
+            : (width: 0, height: 0)
+        let ampm = showsAMPM
+            ? Self.measure(dates.map { ampmText(for: $0) }, font: monoDetailFont)
+            : (width: 0, height: 0)
+
+        // 下方一行按「左星期 + 间距 + 右上下午」估宽，只在两者都显示时才加间距。
+        let detailWidth = weekday.width + ampm.width
+            + (showWeekday && showsAMPM ? AppTheme.Metrics.clockDetailMinGap : 0)
+        let detailHeight = max(weekday.height, ampm.height)
+
+        return ClockLayout(
+            timeFont: timeFont,
+            dateFont: dateFont,
+            detailFont: detailFont,
+            timeWidth: time.width,
+            frameWidth: max(time.width, date.width, detailWidth),
+            dateHeight: date.height,
+            timeHeight: time.height,
+            detailHeight: detailHeight,
+            rowGap: max(2, mainSize * AppTheme.Metrics.clockRowGapRatio),
+            showsDate: showsDate,
+            showsDetail: showsDetailRow,
+            horizontalPadding: max(10, mainSize * 0.10),
+            verticalPadding: max(6, mainSize * 0.05)
+        )
     }
 
     // MARK: - 字体
 
-    /// 解析当前字体；`scale` 供设置页预览等比缩小使用。
-    func resolvedFont(scale: CGFloat = 1) -> NSFont {
-        let size = max(6, CGFloat(fontSize) * scale)
+    /// 按绝对点值解析字体。
+    func resolvedFont(pointSize: CGFloat) -> NSFont {
+        let size = max(6, pointSize)
         let weight = fontWeight.nsWeight
 
         guard fontFamily != FontCatalog.systemFamily else {
@@ -363,6 +599,11 @@ final class AppSettings: ObservableObject {
         ])
         return NSFont(descriptor: descriptor, size: size)
             ?? NSFont.systemFont(ofSize: size, weight: weight)
+    }
+
+    /// 解析当前主体字体；`scale` 供设置页预览等比缩小使用。
+    func resolvedFont(scale: CGFloat = 1) -> NSFont {
+        resolvedFont(pointSize: CGFloat(fontSize) * scale)
     }
 
     // MARK: - 位置
@@ -390,7 +631,11 @@ final class AppSettings: ObservableObject {
     // MARK: - 持久化
 
     private enum Keys {
-        static let pattern = "tclock.formatPattern"
+        static let showDate = "tclock.showDate"
+        static let datePattern = "tclock.datePattern"
+        static let hourCycle = "tclock.hourCycle"
+        static let showAMPM = "tclock.showAMPM"
+        static let showWeekday = "tclock.showWeekday"
         static let family = "tclock.fontFamily"
         static let size = "tclock.fontSize"
         static let weight = "tclock.fontWeight"
@@ -416,7 +661,11 @@ final class AppSettings: ObservableObject {
 
     private func save() {
         let defaults = UserDefaults.standard
-        defaults.set(formatPattern, forKey: Keys.pattern)
+        defaults.set(showDate, forKey: Keys.showDate)
+        defaults.set(datePattern, forKey: Keys.datePattern)
+        defaults.set(hourCycle.rawValue, forKey: Keys.hourCycle)
+        defaults.set(showAMPM, forKey: Keys.showAMPM)
+        defaults.set(showWeekday, forKey: Keys.showWeekday)
         defaults.set(fontFamily, forKey: Keys.family)
         defaults.set(fontSize, forKey: Keys.size)
         defaults.set(fontWeight.rawValue, forKey: Keys.weight)
