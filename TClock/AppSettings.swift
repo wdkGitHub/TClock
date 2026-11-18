@@ -54,6 +54,24 @@ enum HourCycle: String, CaseIterable, Identifiable {
     }
 }
 
+// MARK: - 显示模式
+
+/// 数字时钟 / 机械指针表盘。`displayMode` 只切换渲染方式，
+/// 位置、拖动、气泡等窗口行为完全共用。
+enum ClockDisplayMode: String, CaseIterable, Identifiable {
+    case digital
+    case analog
+
+    var id: String { rawValue }
+
+    var display: String {
+        switch self {
+        case .digital: return NSLocalizedString("clockMode.digital", comment: "")
+        case .analog: return NSLocalizedString("clockMode.analog", comment: "")
+        }
+    }
+}
+
 // MARK: - 时钟排版度量
 
 /// 一次算清「日期 / 时间 / 星期·上下午」三行的字体与尺寸。
@@ -119,6 +137,19 @@ struct ClockLayout {
         self.showsDetail = showsDetail
         self.horizontalPadding = horizontalPadding
         self.verticalPadding = verticalPadding
+    }
+}
+
+/// 指针表盘的共享度量。视图按 `diameter` 画表盘，
+/// `MainWindowManager.contentSize()` 按 `contentSize` 定窗口，两边不会互相猜尺寸。
+struct AnalogLayout {
+    let diameter: CGFloat
+    let dateFont: NSFont
+    let weekdayFont: NSFont
+
+    var contentSize: NSSize {
+        let side = ceil(diameter + AppTheme.Metrics.analogPadding * 2)
+        return NSSize(width: side, height: side)
     }
 }
 
@@ -305,7 +336,9 @@ final class AppSettings: ObservableObject {
 
     // MARK: 显示格式
 
-    /// 是否在时间上方显示日期行。
+    /// 数字时钟 / 指针表盘。默认数字，切换后窗口尺寸随之改变。
+    @Published var displayMode: ClockDisplayMode { didSet { sync() } }
+    /// 是否在时间上方显示日期行（仅数字模式）。
     @Published var showDate: Bool { didSet { sync() } }
     /// 日期行格式串；留空时回退到 `yyyy-MM-dd`。时间本身不可自定义格式。
     @Published var datePattern: String {
@@ -362,12 +395,16 @@ final class AppSettings: ObservableObject {
     private var timeFormatter = DateFormatter()
     private var ampmFormatter = DateFormatter()
     private var weekdayFormatter = DateFormatter()
+    private var shortWeekdayFormatter = DateFormatter()
 
     // MARK: - 初始化
 
     private init() {
         let defaults = UserDefaults.standard
 
+        self.displayMode = ClockDisplayMode(
+            rawValue: defaults.string(forKey: Keys.displayMode) ?? ""
+        ) ?? .digital
         self.showDate = defaults.object(forKey: Keys.showDate) as? Bool ?? true
         self.datePattern = defaults.string(forKey: Keys.datePattern) ?? "yyyy-MM-dd"
         self.hourCycle = HourCycle(rawValue: defaults.string(forKey: Keys.hourCycle) ?? "") ?? .twentyFour
@@ -461,6 +498,7 @@ final class AppSettings: ObservableObject {
         timeFormatter = makeFormatter(hourCycle.timePattern, twelveHour: is12)
         ampmFormatter = makeFormatter("a", twelveHour: true)
         weekdayFormatter = makeFormatter("EEEE", twelveHour: is12)
+        shortWeekdayFormatter = makeFormatter("EEE", twelveHour: is12)
     }
 
     /// 日期行的显隐是独立开关，与格式串互不干扰。
@@ -484,6 +522,11 @@ final class AppSettings: ObservableObject {
 
     func weekdayText(for date: Date) -> String {
         showWeekday ? weekdayFormatter.string(from: date) : ""
+    }
+
+    /// 表盘上的星期缩写（周三 / Wed），不受数字模式那条显隐开关影响。
+    func shortWeekdayText(for date: Date) -> String {
+        shortWeekdayFormatter.string(from: date)
     }
 
     // MARK: - 排版度量
@@ -582,6 +625,16 @@ final class AppSettings: ObservableObject {
         )
     }
 
+    /// 指针表盘的度量。复用「字号」滑杆控制直径，设置页预览同样走 scale。
+    func analogLayout(scale: CGFloat = 1) -> AnalogLayout {
+        let diameter = max(60, CGFloat(fontSize) * AppTheme.Metrics.analogDiameterRatio * scale)
+        return AnalogLayout(
+            diameter: diameter,
+            dateFont: resolvedFont(pointSize: max(7, diameter * 0.085)),
+            weekdayFont: resolvedFont(pointSize: max(7, diameter * 0.072))
+        )
+    }
+
     // MARK: - 字体
 
     /// 按绝对点值解析字体。
@@ -631,6 +684,7 @@ final class AppSettings: ObservableObject {
     // MARK: - 持久化
 
     private enum Keys {
+        static let displayMode = "tclock.displayMode"
         static let showDate = "tclock.showDate"
         static let datePattern = "tclock.datePattern"
         static let hourCycle = "tclock.hourCycle"
@@ -661,6 +715,7 @@ final class AppSettings: ObservableObject {
 
     private func save() {
         let defaults = UserDefaults.standard
+        defaults.set(displayMode.rawValue, forKey: Keys.displayMode)
         defaults.set(showDate, forKey: Keys.showDate)
         defaults.set(datePattern, forKey: Keys.datePattern)
         defaults.set(hourCycle.rawValue, forKey: Keys.hourCycle)

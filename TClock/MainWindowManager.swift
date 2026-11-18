@@ -293,8 +293,12 @@ final class MainWindowManager: NSObject, NSMenuDelegate {
         updateMenuStates()
     }
 
-    /// 依据三行排版度量估算面板尺寸（按「最宽样本」预留，避免秒数/日期变化时窗口忽宽忽窄）。
+    /// 依据当前显示模式估算面板尺寸。
+    /// 指针模式用表盘直径，数字模式用三行排版的最宽样本，避免内容变化时窗口忽大忽小。
     private func contentSize() -> NSSize {
+        if settings.displayMode == .analog {
+            return settings.analogLayout().contentSize
+        }
         let layout = settings.clockLayout()
         guard layout.contentWidth > 0 else { return NSSize(width: 320, height: 120) }
         return NSSize(width: ceil(layout.contentWidth), height: ceil(layout.contentHeight))

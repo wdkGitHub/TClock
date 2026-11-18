@@ -1,5 +1,9 @@
 /* TClock localization. Semantic keys; never localize with display text as key. */
 
+"settings.displayMode.label" = "显示模式";
+"settings.displayMode.help" = "数字时钟或机械指针表盘；表盘固定显示日期、星期与时分秒。";
+"clockMode.digital" = "数字";
+"clockMode.analog" = "指针";
 "settings.date.label" = "日期格式";
 "settings.date.help" = "只作用于时间上方的日期行（仅年月日）：yyyy 年 · M 月 · d 日 · MMM 月份名";
 "settings.date.show" = "显示日期";
@@ -21,9 +25,9 @@
 "settings.appearance.weight" = "字重";
 "settings.appearance.color" = "文字颜色";
 "settings.appearance.shadow" = "文字阴影";
-"settings.appearance.shadow.help" = "在浅色与深色壁纸上都能保持时钟文字清晰";
+"settings.appearance.shadow.help" = "在浅色与深色壁纸上都能保持时钟内容清晰";
 "settings.appearance.opacity" = "透明度";
-"settings.appearance.opacity.help" = "只作用于文字，不影响鼠标操作";
+"settings.appearance.opacity.help" = "只作用于时钟内容，不影响鼠标操作";
 "settings.preview.label" = "时钟预览";
 "settings.behavior.lock" = "锁定位置（点击穿透）";
 "settings.behavior.lock.help" = "锁定后时钟忽略鼠标；解锁请点菜单栏图标 → 锁定位置";

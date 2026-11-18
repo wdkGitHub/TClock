@@ -122,6 +122,22 @@ enum AppTheme {
                 dark: NSColor(calibratedRed: 0.00, green: 0.00, blue: 0.00, alpha: 0.24)
             ))
         }
+
+        // MARK: 指针表盘
+
+        /// 表盘底：比气泡更淡，压住复杂壁纸但保留通透感。
+        static var analogFaceFill: Color {
+            Color(nsColor: dynamicNSColor(
+                "tclock.analogFaceFill",
+                light: NSColor(calibratedWhite: 0.28, alpha: 0.46),
+                dark: NSColor(calibratedWhite: 0.14, alpha: 0.50)
+            ))
+        }
+
+        /// 扫秒指针：沿用应用图标的琥珀色，与时分针拉开层次。
+        static var analogSecondHand: Color {
+            Color(nsColor: NSColor(srgbRed: 0.91, green: 0.72, blue: 0.47, alpha: 1))
+        }
     }
 
     // MARK: - 圆角（大圆角是原生感的关键）
@@ -242,5 +258,12 @@ enum AppTheme {
         static let clockRowGapRatio: CGFloat = 0.03
         /// 窗口宽度安全余量：SwiftUI 等宽数字比 AppKit 度量略宽，留一点余量避免尾部被裁。
         static let clockWidthSlack: CGFloat = 20
+
+        // MARK: 指针表盘
+
+        /// 表盘直径 = 主体字号 × 此系数（默认 96pt → 192pt）。
+        static let analogDiameterRatio: CGFloat = 2.0
+        /// 表盘外缘留白：给描边留位置，同时作为窗口尺寸的固定余量。
+        static let analogPadding: CGFloat = 10
     }
 }

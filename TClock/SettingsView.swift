@@ -33,6 +33,19 @@ struct SettingsView: View {
 
     private var formatRows: some View {
         Group {
+            // 显示模式：数字 / 指针。表盘的日期与星期固定显示，不走下面两个开关。
+            LabeledContent("settings.displayMode.label") {
+                Picker("settings.displayMode.label", selection: $settings.displayMode) {
+                    ForEach(ClockDisplayMode.allCases) { mode in
+                        Text(mode.display).tag(mode)
+                    }
+                }
+                .labelsHidden()
+                .pickerStyle(.segmented)
+                .frame(width: controlWidth)
+            }
+            .help("settings.displayMode.help")
+
             // 日期：显隐与格式是两个独立控件；隐藏时格式输入置灰。
             LabeledContent("settings.date.label") {
                 HStack(spacing: AppTheme.Space.sm) {
@@ -47,7 +60,7 @@ struct SettingsView: View {
                     dateMenu
                 }
             }
-            .disabled(!settings.showDate)
+            .disabled(!settings.showDate || settings.displayMode == .analog)
 
             // 时间只有 24 / 12 小时制两种，不再允许自由输入格式串。
             LabeledContent("settings.time.hourCycle") {
@@ -60,6 +73,7 @@ struct SettingsView: View {
                 .pickerStyle(.segmented)
                 .frame(width: controlWidth)
             }
+            .disabled(settings.displayMode == .analog)
 
             HStack(spacing: AppTheme.Space.xl) {
                 Toggle("settings.date.show", isOn: $settings.showDate)
@@ -73,6 +87,7 @@ struct SettingsView: View {
 
                 Spacer(minLength: 0)
             }
+            .disabled(settings.displayMode == .analog)
 
             HStack(spacing: AppTheme.Space.xl) {
                 // 上下午开关始终可见可设置；24 小时制下没有上下午概念，置灰但保留状态。
@@ -88,6 +103,7 @@ struct SettingsView: View {
 
                 Spacer(minLength: 0)
             }
+            .disabled(settings.displayMode == .analog)
         }
     }
 

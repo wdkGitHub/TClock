@@ -1,5 +1,9 @@
 /* TClock localization. Semantic keys; never localize with display text as key. */
 
+"settings.displayMode.label" = "Display Mode";
+"settings.displayMode.help" = "Digital clock or mechanical-style dial. The dial always shows the day, weekday, and time.";
+"clockMode.digital" = "Digital";
+"clockMode.analog" = "Analog";
 "settings.date.label" = "Date Format";
 "settings.date.help" = "Applies only to the date line above the clock (year/month/day only): yyyy year · M month · d day · MMM month name";
 "settings.date.show" = "Show Date";
@@ -21,9 +25,9 @@
 "settings.appearance.weight" = "Font Weight";
 "settings.appearance.color" = "Text Color";
 "settings.appearance.shadow" = "Text Shadow";
-"settings.appearance.shadow.help" = "Keeps the clock text legible on both light and dark wallpapers";
+"settings.appearance.shadow.help" = "Keeps the clock content legible on both light and dark wallpapers";
 "settings.appearance.opacity" = "Opacity";
-"settings.appearance.opacity.help" = "Affects text only; mouse interaction is unchanged";
+"settings.appearance.opacity.help" = "Affects the clock content only; mouse interaction is unchanged";
 "settings.preview.label" = "Clock preview";
 "settings.behavior.lock" = "Lock Position (Click Through)";
 "settings.behavior.lock.help" = "When locked, the clock ignores the mouse; unlock via the menu bar icon → Lock Position";
